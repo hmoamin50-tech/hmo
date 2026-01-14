@@ -1,109 +1,131 @@
 import fs from "fs";
 import path from "path";
 
-const dataPath = path.join(process.cwd(), "data/novels.json");
-const novels = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-
 const API = (token, method) =>
   `https://api.telegram.org/bot${token}/${method}`;
 
+const states = {};
+const answers = {};
+
+const dataPath = path.join(process.cwd(), "data/responses.json");
+
+function saveData(entry) {
+  const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+  data.push(entry);
+  fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+}
+
+// دالة حساب نسبة الانجذاب
+function calcAttraction(oldLove, newLove, happy) {
+  let base = (newLove * 0.7 + oldLove * 0.3);
+  if (happy === "نعم") base += 10;
+  return Math.min(100, Math.round(base));
+}
+
 export default async function handler(req, res) {
   const token = process.env.BOT_TOKEN;
-
-  if (req.method !== "POST") {
-    return res.status(200).send("📚 Novel Bot Running");
-  }
+  if (req.method !== "POST") return res.status(200).send("Running");
 
   const update = req.body;
 
-  // ========= START =========
+  // بدء التحدي
   if (update.message?.text === "/start") {
-    await sendCategories(update.message.chat.id, token);
+    const chatId = update.message.chat.id;
+    states[chatId] = "q1";
+    answers[chatId] = {
+      user: update.message.from
+    };
+
+    await sendMessage(chatId,
+      "🧩 *تحدي: اعرف مدى تناسقك*\n\nهل أنت مغرم بأحدهم؟",
+      token,
+      [["نعم", "لا"]]
+    );
     return res.status(200).end();
   }
 
-  // ========= CALLBACK =========
+  // أزرار
   if (update.callback_query) {
     const chatId = update.callback_query.message.chat.id;
     const data = update.callback_query.data;
 
-    if (data === "back_categories") {
-      await sendCategories(chatId, token);
+    switch (states[chatId]) {
+
+      case "q1":
+        answers[chatId].inLove = data;
+        states[chatId] = "q2";
+        await sendMessage(chatId,
+          "هل سبق لك وأن أحببت شخصًا غيره؟",
+          token,
+          [["نعم", "لا"]]
+        );
+        break;
+
+      case "q2":
+        answers[chatId].lovedBefore = data;
+        states[chatId] = "q3";
+        await sendMessage(chatId,
+          "أدخل *نسبة حبك للشخص القديم* (0 – 100)",
+          token
+        );
+        break;
     }
 
-    if (data.startsWith("cat_")) {
-      const category = data.replace("cat_", "");
-      await sendNovelsByCategory(chatId, category, token);
-    }
-
-    if (data.startsWith("novel_")) {
-      const id = parseInt(data.replace("novel_", ""));
-      const novel = novels.find(n => n.id === id);
-      if (novel) {
-        await sendNovelDetails(chatId, novel, token);
-      }
-    }
+    return res.status(200).end();
   }
 
-  res.status(200).end();
-}
+  // إدخال نص / أرقام
+  if (update.message?.text) {
+    const chatId = update.message.chat.id;
+    const text = update.message.text;
 
-// ============ UI FUNCTIONS ============
+    switch (states[chatId]) {
 
-async function sendCategories(chatId, token) {
-  const categories = [...new Set(novels.map(n => n.category))];
+      case "q3":
+        answers[chatId].oldLove = Number(text);
+        states[chatId] = "q4";
+        await sendMessage(chatId,
+          "أدخل *نسبة حبك للشخص الحالي* (0 – 100)",
+          token
+        );
+        break;
 
-  const keyboard = categories.map(cat => [
-    { text: cat, callback_data: `cat_${cat}` }
-  ]);
+      case "q4":
+        answers[chatId].newLove = Number(text);
+        states[chatId] = "q5";
+        await sendMessage(chatId,
+          "هل تشعر بالسعادة الآن؟",
+          token,
+          [["نعم", "لا"]]
+        );
+        break;
 
-  await fetch(API(token, "sendMessage"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: "📚 اختر نوع الرواية:",
-      reply_markup: { inline_keyboard: keyboard }
-    })
-  });
-}
+      case "q5":
+        answers[chatId].happy = text;
+        states[chatId] = "q6";
+        await sendMessage(chatId,
+          "صف حياتك الآن بكلمات صادقة…",
+          token
+        );
+        break;
 
-async function sendNovelsByCategory(chatId, category, token) {
-  const list = novels
-    .filter(n => n.category === category)
-    .map(n => [{ text: n.title, callback_data: `novel_${n.id}` }]);
+      case "q6":
+        answers[chatId].lifeDesc = text;
+        states[chatId] = "done";
 
-  list.push([{ text: "🔙 رجوع للأنواع", callback_data: "back_categories" }]);
+        const attraction = calcAttraction(
+          answers[chatId].oldLove,
+          answers[chatId].newLove,
+          answers[chatId].happy
+        );
 
-  await fetch(API(token, "sendMessage"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: `📖 روايات ${category}:`,
-      reply_markup: { inline_keyboard: list }
-    })
-  });
-}
+        // حفظ البيانات
+        saveData({
+          date: new Date().toISOString(),
+          chatId,
+          ...answers[chatId],
+          attraction
+        });
 
-async function sendNovelDetails(chatId, novel, token) {
-  await fetch(API(token, "sendMessage"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text:
-`📘 *${novel.title}*
-✍️ ${novel.author}
-
-📝 ${novel.description}`,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "⬇️ تحميل الرواية", url: novel.pdf }],
-          [{ text: "🔙 رجوع للأنواع", callback_data: "back_categories" }]
-        ]
-      }
-    })
-  });
-}
+        await sendMessage(chatId,
+`
