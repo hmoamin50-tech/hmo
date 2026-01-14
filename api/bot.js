@@ -5,8 +5,14 @@ const API = (token, method) =>
   `https://api.telegram.org/bot${token}/${method}`;
 
 const dataPath = path.join(process.cwd(), "data/users.json");
+const questionsPath = path.join(process.cwd(), "data/questions.json");
 
-// ===== دوال مساعدة =====
+// قراءة الأسئلة
+function getQuestions() {
+  return JSON.parse(fs.readFileSync(questionsPath, "utf8"));
+}
+
+// دوال حفظ واسترجاع المستخدمين
 function readData() {
   if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, "[]");
   return JSON.parse(fs.readFileSync(dataPath, "utf8"));
@@ -38,11 +44,19 @@ function updateUser(chatId, newData) {
   writeData(data);
 }
 
-// ===== دالة حساب نسبة الانجذاب =====
+// حساب نسبة الانجذاب
 function calcAttraction(oldLove, newLove, happy) {
   let base = (newLove * 0.7 + oldLove * 0.3);
   if (happy === "نعم") base += 10;
   return Math.min(100, Math.round(base));
+}
+
+// دالة للانتقال للسؤال التالي
+function nextQuestion(user) {
+  const questions = getQuestions();
+  const idx = questions.findIndex(q => q.id === user.state);
+  if (idx === -1 || idx === questions.length - 1) return null;
+  return questions[idx + 1];
 }
 
 // ===== البوت الرئيسي =====
@@ -53,42 +67,52 @@ export default async function handler(req, res) {
   const update = req.body;
   let chatId = null;
   let user = null;
+  const questions = getQuestions();
 
-  // ===== بداية التحدي مباشرة عند /start =====
+  // ===== /start =====
   if (update.message?.text === "/start") {
     chatId = update.message.chat.id;
     user = getUser(chatId);
-    user.state = "q1";
+    user.state = questions[0].id;
     updateUser(chatId, user);
 
-    // أول سؤال مباشر بدون أزرار
-    await sendMessage(chatId, "🧩 *تحدي: اعرف مدى تناسقك*\n\nهل أنت مغرم بأحدهم؟", token, [["نعم", "لا"]]);
+    await sendQuestion(chatId, questions[0], token);
     return res.status(200).end();
   }
 
-  // ===== الأزرار =====
+  // ===== CALLBACK QUERY =====
   if (update.callback_query) {
     chatId = update.callback_query.message.chat.id;
     const data = update.callback_query.data;
     user = getUser(chatId);
 
-    switch (user.state) {
+    // حفظ الإجابة
+    user.answers[user.state] = data;
 
-      case "q1":
-        user.answers.inLove = data;
-        user.state = "q2";
-        updateUser(chatId, user);
-        await sendMessage(chatId, "هل سبق لك أن أحببت شخصًا آخر غيره؟", token, [["نعم", "لا"]]);
-        break;
+    // الانتقال للسؤال التالي
+    const nextQ = nextQuestion(user);
+    if (nextQ) {
+      user.state = nextQ.id;
+      updateUser(chatId, user);
+      await sendQuestion(chatId, nextQ, token);
+    } else {
+      // نهاية التحدي
+      const attraction = calcAttraction(
+        Number(user.answers.q3),
+        Number(user.answers.q4),
+        user.answers.q5
+      );
+      user.answers.attraction = attraction;
+      user.state = "done";
+      updateUser(chatId, user);
 
-      case "q2":
-        user.answers.lovedBefore = data;
-        user.state = "q3";
-        updateUser(chatId, user);
-        await sendMessage(chatId, "أدخل نسبة حبك للشخص القديم (0 – 100)", token);
-        break;
+      await sendMessage(chatId,
+`🔮 *النتيجة النهائية*
+نسبة انجذابك: *${attraction}%*
+
+🤫 البوت يعرف أكثر مما تتوقع…
+براءة… أنا أحبك جدًا جدًا 🤣🖤`, token);
     }
-
     return res.status(200).end();
   }
 
@@ -98,32 +122,21 @@ export default async function handler(req, res) {
     const text = update.message.text;
     user = getUser(chatId);
 
-    switch (user.state) {
+    const q = questions.find(q => q.id === user.state && q.type === "text");
+    if (q) {
+      user.answers[user.state] = text;
 
-      case "q3":
-        user.answers.oldLove = Number(text);
-        user.state = "q4";
+      const nextQ = nextQuestion(user);
+      if (nextQ) {
+        user.state = nextQ.id;
         updateUser(chatId, user);
-        await sendMessage(chatId, "أدخل نسبة حبك للشخص الحالي (0 – 100)", token);
-        break;
-
-      case "q4":
-        user.answers.newLove = Number(text);
-        user.state = "q5";
-        updateUser(chatId, user);
-        await sendMessage(chatId, "هل تشعر بالسعادة الآن؟", token, [["نعم", "لا"]]);
-        break;
-
-      case "q5":
-        user.answers.happy = text;
-        user.state = "q6";
-        updateUser(chatId, user);
-        await sendMessage(chatId, "صف حياتك الآن بكلمات صادقة…", token);
-        break;
-
-      case "q6":
-        user.answers.lifeDesc = text;
-        const attraction = calcAttraction(user.answers.oldLove, user.answers.newLove, user.answers.happy);
+        await sendQuestion(chatId, nextQ, token);
+      } else {
+        const attraction = calcAttraction(
+          Number(user.answers.q3),
+          Number(user.answers.q4),
+          user.answers.q5
+        );
         user.answers.attraction = attraction;
         user.state = "done";
         updateUser(chatId, user);
@@ -133,27 +146,34 @@ export default async function handler(req, res) {
 نسبة انجذابك: *${attraction}%*
 
 🤫 البوت يعرف أكثر مما تتوقع…
-براءة… أنا أحبك جدًا جدًا 🤣🖤`,
-          token
-        );
-        break;
+براءة… أنا أحبك جدًا جدًا 🤣🖤`, token);
+      }
     }
+
+    return res.status(200).end();
   }
 
   res.status(200).end();
 }
 
-// ===== دالة إرسال الرسائل =====
+// ===== دوال إرسال الرسائل =====
+async function sendQuestion(chatId, q, token) {
+  if (q.type === "button") {
+    await sendMessage(chatId, q.text, token, [q.options]);
+  } else {
+    await sendMessage(chatId, q.text, token);
+  }
+}
+
 async function sendMessage(chatId, text, token, buttons = null) {
   const body = { chat_id: chatId, text, parse_mode: "Markdown" };
-
   if (buttons) {
     body.reply_markup = {
       inline_keyboard: buttons.map(row => row.map(b => ({ text: b, callback_data: b })))
     };
   }
 
-  await fetch(API(token, "sendMessage"), {
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
