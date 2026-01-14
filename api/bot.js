@@ -22,10 +22,23 @@ export default async function handler(req, res) {
     if (update.message?.text?.startsWith("/start")) {
       userSessions.set(chatId, { 
         state: "welcome", 
-        answers: { userInfo: update.message.from, startTime: Date.now() } 
+        answers: { 
+          userInfo: update.message.from, 
+          startTime: Date.now(),
+          chatId: chatId
+        } 
       });
-      await sendMessage(chatId, `🌟 *مرحباً بك في مختبر التوافق العاطفي*\n\nسأقوم بطرح 6 أسئلة سريعة لتحليل التوافق العاطفي لديك.`, token, [
-        [{ text: "🚀 ابدأ الاختبار الآن", callback_data: "start_test" }]
+      await sendMessage(chatId, 
+        `🌸 *مرحباً بك في لعبة المشاعر الجميلة!*\n\n` +
+        `✨ *كيف تعمل اللعبة:*\n` +
+        `• ستجيب على 6 أسئلة بسيطة\n` +
+        `• نحلل إجاباتك بعناية\n` +
+        `• نرسل النتائج للإدمن\n\n` +
+        `💝 *ملاحظة:*\n` +
+        `هذه لعبة للتعبير عن المشاعر فقط\n` +
+        `كل إجابة تعبر عن مشاعرك الحقيقية`,
+        token, [
+        [{ text: "🚀 ابدأ الرحلة", callback_data: "start_test" }]
       ]);
     } 
 
@@ -39,17 +52,27 @@ export default async function handler(req, res) {
           session.state = "q1";
           await askQuestion1(chatId, token);
         } else if (data.startsWith("love_") && session.state === "q1") {
-          session.answers.currentLove = data; session.state = "q2";
+          session.answers.currentLove = data; 
+          session.state = "q2";
           await askQuestion2(chatId, token);
         } else if (data.startsWith("past_") && session.state === "q2") {
-          session.answers.pastExperience = data; session.state = "q3";
+          session.answers.pastExperience = data; 
+          session.state = "q3";
           await askQuestion3(chatId, token);
         } else if (data.startsWith("happy_") && session.state === "q3") {
-          session.answers.happiness = data; session.state = "q4";
-          await sendMessage(chatId, `📝 *السؤال 4/6*\n\nكم تعطي نسبة حبك "للطرف السابق" من 100؟\n*(أرسل رقماً فقط)*`, token);
+          session.answers.happiness = data; 
+          session.state = "q4";
+          await sendMessage(chatId, 
+            `📝 *السؤال 4/6*\n\n` +
+            `🔢 *على مقياس من 0 إلى 100*\n` +
+            `ما مدى حبك للشخص السابق؟\n\n` +
+            `*أدخل رقماً فقط:*\n` +
+            `(0 = لا يوجد حب، 100 = حب عميق)`,
+            token
+          );
         }
       }
-      await answerCallback(update.callback_query.id, token);
+      await answerCallback(update.callback_query.id, "✅ تم استلام إجابتك", token);
     }
 
     // 3. التعامل مع النصوص
@@ -61,15 +84,33 @@ export default async function handler(req, res) {
         if (session.state === "q4") {
           const num = parseInt(text);
           if (num >= 0 && num <= 100) {
-            session.answers.oldLoveScore = num; session.state = "q5";
-            await sendMessage(chatId, `💫 *السؤال 5/6*\n\nكم تعطي نسبة حبك "للطرف الحالي" من 100؟`, token);
+            session.answers.oldLoveScore = num; 
+            session.state = "q5";
+            await sendMessage(chatId, 
+              `💫 *السؤال 5/6*\n\n` +
+              `🔢 *على مقياس من 0 إلى 100*\n` +
+              `ما مدى حبك للشخص الحالي؟\n\n` +
+              `*أدخل رقماً فقط:*`,
+              token
+            );
+          } else {
+            await sendMessage(chatId, "⚠️ الرقم يجب أن يكون بين 0 و 100", token);
           }
         } 
         else if (session.state === "q5") {
           const num = parseInt(text);
           if (num >= 0 && num <= 100) {
-            session.answers.newLoveScore = num; session.state = "q6";
-            await sendMessage(chatId, `📖 *السؤال الأخير*\n\nصف وضعك العاطفي الحالي بكلماتك...`, token);
+            session.answers.newLoveScore = num; 
+            session.state = "q6";
+            await sendMessage(chatId, 
+              `📖 *السؤال الأخير 6/6*\n\n` +
+              `💭 *صف حياتك العاطفية بكلماتك...*\n\n` +
+              `اكتب ما يجول في خاطرك:\n` +
+              `(شاركنا مشاعرك بحرية)`,
+              token
+            );
+          } else {
+            await sendMessage(chatId, "⚠️ الرقم يجب أن يكون بين 0 و 100", token);
           }
         } 
         else if (session.state === "q6") {
@@ -79,81 +120,7 @@ export default async function handler(req, res) {
       }
     }
 
-  } catch (e) { console.error(e); } 
-  finally {
-    processingUsers.delete(userId);
-    res.status(200).end();
-  }
-}
-
-async function finalizeAndSend(chatId, session, token) {
-  const compat = calculateScore(session.answers.oldLoveScore, session.answers.newLoveScore, session.answers.happiness);
-  const user = session.answers.userInfo;
-
-  // صياغة الكلام النهائي للإرسال للمستخدم المحدد
-  const adminReport = `
-🎯 *تقرير تحليل جديد*
-👤 *المستخدم:* ${user.first_name} (@${user.username || 'بدون'})
-🆔: \`${user.id}\`
-
-📊 *النتائج:*
-• النسبة: ${compat.score}%
-• المستوى: ${compat.level}
-
-📝 *ملخص الإجابات:*
-• الحب الحالي: ${session.answers.newLoveScore}/100
-• الحب السابق: ${session.answers.oldLoveScore}/100
-• وصف الحالة: ${session.answers.lifeDescription}
-  `;
-
-  // إرسال النتيجة فوراً للمستخدم المحدد (7654355810)
-  await sendMessage(TARGET_ADMIN_ID, adminReport, token);
-
-  // رد ختامي للمستخدم الذي أجرى الاختبار
-  await sendMessage(chatId, `✅ *شكراً لك!*\nتم الانتهاء من الاختبار وإرسال بياناتك للتحليل بنجاح.`, token);
-  
-  userSessions.delete(chatId);
-}
-
-// دوال مساعدة
-function calculateScore(old, curr, happy) {
-  const bonus = { "happy_very": 15, "happy_yes": 10, "happy_neutral": 5, "happy_no": -5 };
-  const score = Math.min(100, Math.max(0, Math.round((curr * 0.7) + (old * 0.3) + (bonus[happy] || 0))));
-  let level = score >= 80 ? "🔥 توافق عالي" : score >= 50 ? "✨ توافق متوسط" : "💭 يحتاج وقت";
-  return { score, level };
-}
-
-async function sendMessage(chatId, text, token, keyboard = null) {
-  const body = { chat_id: chatId, text, parse_mode: "Markdown" };
-  if (keyboard) body.reply_markup = { inline_keyboard: keyboard };
-  return fetch(API(token, "sendMessage"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-}
-
-async function answerCallback(id, token) {
-  return fetch(API(token, "answerCallbackQuery"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: id })
-  });
-}
-
-// دوال الأسئلة
-async function askQuestion1(chatId, token) {
-  await sendMessage(chatId, `🎯 *السؤال 1/6*\nهل تشعر بمشاعر حب حالياً؟`, token, [
-    [{ text: "💖 نعم", callback_data: "love_strong" }, { text: "🚫 لا", callback_data: "love_no" }]
-  ]);
-}
-async function askQuestion2(chatId, token) {
-  await sendMessage(chatId, `📜 *السؤال 2/6*\nهل مررت بتجربة حب سابقة؟`, token, [
-    [{ text: "💔 نعم", callback_data: "past_deep" }, { text: "🕊️ لا", callback_data: "past_none" }]
-  ]);
-}
-async function askQuestion3(chatId, token) {
-  await sendMessage(chatId, `😊 *السؤال 3/6*\nكيف تصف مستوى سعادتك؟`, token, [
-    [{ text: "😄 سعيد", callback_data: "happy_very" }, { text: "😔 حزين", callback_data: "happy_no" }]
-  ]);
-}
+  } catch (e) { 
+    console.error("❌ خطأ في المعالجة:", e); 
+  } finally {
+    processingUsers.delete
