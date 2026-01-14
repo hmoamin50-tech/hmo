@@ -8,34 +8,71 @@ const userSessions = new Map();
 
 const dataPath = path.join(process.cwd(), "data/responses.json");
 
-// ===== دالة لحفظ البيانات بشكل آمن =====
+// ===== دالة محسنة لحفظ البيانات مع تتبع =====
 function saveData(entry) {
   try {
-    let data = [];
-    if (fs.existsSync(dataPath)) {
-      const fileContent = fs.readFileSync(dataPath, "utf8");
-      data = fileContent ? JSON.parse(fileContent) : [];
+    console.log('🎯 بدء حفظ البيانات للمستخدم:', entry.chatId);
+    
+    // التأكد من وجود مجلد data
+    const dataDir = path.join(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) {
+      console.log('📁 إنشاء مجلد data...');
+      fs.mkdirSync(dataDir, { recursive: true });
     }
     
+    // قراءة البيانات الحالية
+    let data = [];
+    if (fs.existsSync(dataPath)) {
+      try {
+        const fileContent = fs.readFileSync(dataPath, "utf8");
+        if (fileContent.trim()) {
+          data = JSON.parse(fileContent);
+          console.log('📖 تم قراءة', data.length, 'سجل');
+        }
+      } catch (parseError) {
+        console.error('❌ خطأ في قراءة الملف:', parseError);
+        // إنشاء ملف جديد إذا كان تالفاً
+        data = [];
+      }
+    } else {
+      console.log('📄 إنشاء ملف جديد');
+    }
+    
+    // إضافة البيانات الجديدة
     const enhancedEntry = {
       ...entry,
       timestamp: new Date().toISOString(),
-      sessionId: Date.now()
+      sessionId: Date.now(),
+      savedAt: new Date().toLocaleString('ar-EG')
     };
     
     data.push(enhancedEntry);
+    
+    // حفظ البيانات
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
+    console.log('✅ تم حفظ البيانات للمستخدم:', entry.chatId);
+    console.log('📊 إجمالي السجلات:', data.length);
+    console.log('📍 مسار الملف:', dataPath);
     
     // إنشاء نسخة احتياطية
-    const backupDir = path.join(process.cwd(), "data/backup");
-    if (!fs.existsSync(backupDir)) {
-      fs.mkdirSync(backupDir, { recursive: true });
+    try {
+      const backupDir = path.join(dataDir, "backup");
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      const backupPath = path.join(backupDir, `responses_${Date.now()}.json`);
+      fs.writeFileSync(backupPath, JSON.stringify(enhancedEntry, null, 2));
+      console.log('💾 تم إنشاء نسخة احتياطية');
+    } catch (backupError) {
+      console.error('⚠️ خطأ في النسخ الاحتياطي:', backupError);
     }
-    const backupPath = path.join(backupDir, `responses_${Date.now()}.json`);
-    fs.writeFileSync(backupPath, JSON.stringify(enhancedEntry, null, 2));
+    
+    return enhancedEntry;
     
   } catch (error) {
-    console.error("Error saving data:", error);
+    console.error('❌ خطأ في حفظ البيانات:', error);
+    console.error('📌 تفاصيل الخطأ:', error.message);
+    throw error;
   }
 }
 
@@ -77,13 +114,107 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).json({ 
       status: "active",
-      service: "Love Compatibility Bot",
-      version: "2.1.0" 
+      service: "مختبر التوافق العاطفي",
+      version: "2.1.0",
+      message: "استخدم POST للتفاعل مع البوت"
     });
   }
 
   try {
     const update = req.body;
+    console.log('📥 تحديث جديد:', update.update_id);
+
+    // ===== أمر اختبار الحفظ =====
+    if (update.message?.text === "/test") {
+      const chatId = update.message.chat.id;
+      const user = update.message.from;
+      
+      console.log('🧪 اختبار حفظ البيانات للمستخدم:', user.id);
+      
+      // بيانات اختبارية
+      const testData = {
+        chatId: chatId,
+        userInfo: {
+          id: user.id,
+          username: user.username || "غير معروف",
+          firstName: user.first_name || "مستخدم",
+          lastName: user.last_name || ""
+        },
+        answers: {
+          test: true,
+          message: "هذا اختبار لحفظ البيانات"
+        },
+        compatibility: {
+          score: 75,
+          level: "✨ اختبار"
+        }
+      };
+      
+      try {
+        const savedData = saveData(testData);
+        await sendMessage(chatId, 
+          `✅ *تم اختبار الحفظ بنجاح!*\n\n` +
+          `📊 تم حفظ البيانات في النظام\n` +
+          `🆔 رقم الجلسة: ${savedData.sessionId}\n` +
+          `📅 الوقت: ${savedData.savedAt}\n\n` +
+          `🔍 يمكنك التحقق من البيانات عبر:\n` +
+          `/dashboard أو /stats`,
+          token
+        );
+      } catch (error) {
+        await sendMessage(chatId, 
+          `❌ *خطأ في اختبار الحفظ*\n\n` +
+          `الخطأ: ${error.message}\n` +
+          `تفاصيل: ${error.toString()}`,
+          token
+        );
+      }
+      
+      return res.status(200).end();
+    }
+
+    // ===== أمر عرض الإحصائيات =====
+    if (update.message?.text === "/stats" || update.message?.text === "/dashboard") {
+      const chatId = update.message.chat.id;
+      
+      try {
+        let data = [];
+        if (fs.existsSync(dataPath)) {
+          const fileContent = fs.readFileSync(dataPath, "utf8");
+          data = fileContent ? JSON.parse(fileContent) : [];
+        }
+        
+        const total = data.length;
+        const today = new Date().toDateString();
+        const todayCount = data.filter(d => 
+          new Date(d.timestamp).toDateString() === today
+        ).length;
+        
+        const avgScore = data.length > 0 
+          ? Math.round(data.reduce((sum, d) => sum + (d.compatibility?.score || 0), 0) / data.length)
+          : 0;
+        
+        await sendMessage(chatId,
+          `📊 *إحصائيات البوت*\n\n` +
+          `📈 إجمالي الإجابات: ${total}\n` +
+          `📅 إجابات اليوم: ${todayCount}\n` +
+          `📊 متوسط النسبة: ${avgScore}%\n` +
+          `👥 المستخدمون النشطون: ${userSessions.size}\n\n` +
+          `📍 مسار البيانات: ${dataPath}\n` +
+          `📂 حجم الملف: ${fs.existsSync(dataPath) ? Math.round(fs.statSync(dataPath).size / 1024) : 0} KB`,
+          token
+        );
+        
+      } catch (error) {
+        await sendMessage(chatId,
+          `❌ *خطأ في تحميل الإحصائيات*\n\n` +
+          `الخطأ: ${error.message}`,
+          token
+        );
+      }
+      
+      return res.status(200).end();
+    }
 
     // ===== بدء الاختبار =====
     if (update.message?.text === "/start" || update.message?.text === "/begin") {
@@ -104,6 +235,8 @@ export default async function handler(req, res) {
         },
         step: 0
       });
+
+      console.log('🚀 بدء جلسة جديدة للمستخدم:', user.id, 'Chat ID:', chatId);
 
       await sendMessage(chatId,
         `🌟 *مرحباً ${user.first_name}* 🌟
@@ -129,6 +262,8 @@ export default async function handler(req, res) {
       const chatId = update.callback_query.message.chat.id;
       const data = update.callback_query.data;
       const session = userSessions.get(chatId);
+
+      console.log('🔘 ضغط زر:', data, 'للمستخدم:', chatId, 'الحالة:', session?.state);
 
       if (!session) {
         await sendMessage(chatId, "⚠️ الجلسة منتهية. أرسل /start للبدء من جديد.", token);
@@ -226,7 +361,7 @@ export default async function handler(req, res) {
           ]
         );
       }
-      // معالجة إجابة السؤال الثالث (مستوى السعادة) - هذه هي الإضافة المهمة!
+      // معالجة إجابة السؤال الثالث (مستوى السعادة)
       else if (session.state === "q3" && data.startsWith("happy_")) {
         session.answers.happiness = data;
         session.state = "q4";
@@ -262,6 +397,8 @@ export default async function handler(req, res) {
       const chatId = update.message.chat.id;
       const text = update.message.text.trim();
       const session = userSessions.get(chatId);
+
+      console.log('📝 إدخال نصي:', text, 'للمستخدم:', chatId, 'الحالة:', session?.state);
 
       if (!session) {
         await sendMessage(chatId, "⚠️ الجلسة منتهية. أرسل /start للبدء من جديد.", token);
@@ -347,15 +484,35 @@ export default async function handler(req, res) {
         );
 
         // تحضير البيانات للحفظ
-        const finalData = {
-          ...session.answers,
-          compatibility,
-          endTime: new Date().toISOString(),
+        const dataToSave = {
+          chatId: chatId,
+          userInfo: session.answers.userInfo,
+          answers: {
+            currentLove: session.answers.currentLove,
+            pastExperience: session.answers.pastExperience,
+            happiness: session.answers.happiness,
+            oldLoveScore: session.answers.oldLoveScore,
+            newLoveScore: session.answers.newLoveScore,
+            lifeDescription: session.answers.lifeDescription
+          },
+          compatibility: compatibility,
           duration: Date.now() - new Date(session.answers.startTime).getTime()
         };
 
-        // حفظ البيانات
-        saveData(finalData);
+        console.log('📝 بيانات للحفظ:', dataToSave);
+        
+        try {
+          // حفظ البيانات مع تتبع
+          const savedData = saveData(dataToSave);
+          console.log('🎉 تمت العملية بنجاح:', savedData);
+        } catch (saveError) {
+          console.error('💥 فشل في الحفظ:', saveError);
+          await sendMessage(chatId, 
+            "⚠️ حدث خطأ في حفظ النتائج، لكن الاختبار مكتمل.\n" +
+            "تفاصيل الخطأ: " + saveError.message, 
+            token
+          );
+        }
 
         // الحصول على نص السعادة
         const happinessText = getHappinessText(session.answers.happiness);
@@ -376,6 +533,7 @@ export default async function handler(req, res) {
           `✨ *نصيحة أخيرة*\n` +
           `الحب رحلة وليس وجهة، استمتع بكل لحظة وتعلم من كل تجربة.\n\n` +
           `🔐 *بياناتك محفوظة بشكل آمن*\n` +
+          `📊 يمكنك رؤية إحصائيات البوت عبر /stats\n` +
           `شكراً لمشاركتنا مشاعرك الصادقة 💖`,
           token
         );
@@ -389,7 +547,10 @@ export default async function handler(req, res) {
 
         // حذف الجلسة بعد 10 دقائق
         setTimeout(() => {
-          userSessions.delete(chatId);
+          if (userSessions.has(chatId)) {
+            userSessions.delete(chatId);
+            console.log('🗑️ تم تنظيف جلسة المستخدم:', chatId);
+          }
         }, 10 * 60 * 1000);
       }
       // معالجة أي نص آخر (ليس جزءاً من الاختبار)
@@ -406,8 +567,12 @@ export default async function handler(req, res) {
 
     res.status(200).end();
   } catch (error) {
-    console.error("Error in handler:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("❌ خطأ في handler:", error);
+    res.status(500).json({ 
+      error: "Internal server error",
+      message: error.message,
+      stack: error.stack 
+    });
   }
 }
 
@@ -425,6 +590,8 @@ async function sendMessage(chatId, text, token, inlineKeyboard = null) {
       body.reply_markup = { inline_keyboard: inlineKeyboard };
     }
 
+    console.log('📤 إرسال رسالة إلى:', chatId);
+    
     const response = await fetch(`${API(token, "sendMessage")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -432,10 +599,13 @@ async function sendMessage(chatId, text, token, inlineKeyboard = null) {
     });
 
     if (!response.ok) {
-      console.error("Failed to send message:", await response.text());
+      const errorText = await response.text();
+      console.error('❌ فشل في إرسال الرسالة:', response.status, errorText);
+    } else {
+      console.log('✅ تم إرسال الرسالة بنجاح إلى:', chatId);
     }
   } catch (error) {
-    console.error("Error sending message:", error);
+    console.error("❌ خطأ في إرسال الرسالة:", error);
   }
 }
 
@@ -446,7 +616,7 @@ function getHappinessText(happinessKey) {
     "happy_neutral": "😐 محايد",
     "happy_no": "😔 غير سعيد"
   };
-  return happinessMap[happinessKey] || "غير محدد";
+  return happinessMap[happinessKey] || happinessKey || "غير محدد";
 }
 
 function generateInsights(score, answers) {
@@ -460,10 +630,46 @@ function generateInsights(score, answers) {
 // ===== تنظيف الجلسات القديمة تلقائياً =====
 setInterval(() => {
   const now = Date.now();
+  let cleaned = 0;
+  
   for (const [chatId, session] of userSessions.entries()) {
     const sessionAge = now - new Date(session.answers.startTime).getTime();
     if (sessionAge > 30 * 60 * 1000) { // 30 دقيقة
       userSessions.delete(chatId);
+      cleaned++;
     }
   }
+  
+  if (cleaned > 0) {
+    console.log(`🧹 تم تنظيف ${cleaned} جلسة منتهية`);
+  }
 }, 10 * 60 * 1000); // كل 10 دقائق
+
+// ===== عند بدء التشغيل =====
+console.log('🚀 بدء تشغيل بوت التوافق العاطفي...');
+console.log('📍 مسار بيانات:', dataPath);
+
+// التحقق من وجود مجلد data
+const dataDir = path.join(process.cwd(), "data");
+if (!fs.existsSync(dataDir)) {
+  console.log('📁 إنشاء مجلد data...');
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// التحقق من وجود ملف responses.json
+if (!fs.existsSync(dataPath)) {
+  console.log('📄 إنشاء ملف responses.json جديد...');
+  fs.writeFileSync(dataPath, JSON.stringify([], null, 2));
+  console.log('✅ تم إنشاء الملف بنجاح');
+} else {
+  try {
+    const fileContent = fs.readFileSync(dataPath, "utf8");
+    const data = fileContent ? JSON.parse(fileContent) : [];
+    console.log(`📊 تم تحميل ${data.length} سجل من قاعدة البيانات`);
+  } catch (error) {
+    console.error('❌ خطأ في قراءة الملف:', error.message);
+    // إعادة إنشاء الملف إذا كان تالفاً
+    fs.writeFileSync(dataPath, JSON.stringify([], null, 2));
+    console.log('🔄 تم إعادة إنشاء الملف');
+  }
+}
