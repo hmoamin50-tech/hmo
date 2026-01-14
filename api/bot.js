@@ -8,7 +8,6 @@ const userSessions = new Map();
 
 // ===== إعدادات الإدمن =====
 const ADMIN_IDS = [7654355810]; // ID الخاص بك هنا
-const ADMIN_CHAT_ID = 7654355810; // يمكن أن يكون نفس الـ ID
 
 // ===== مسار البيانات =====
 const dataPath = path.join(process.cwd(), "data/responses.json");
@@ -19,7 +18,7 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-// ===== دالة محسنة لحفظ البيانات =====
+// ===== دالة حفظ البيانات =====
 function saveData(entry) {
   try {
     let data = [];
@@ -52,7 +51,7 @@ async function sendToAdmin(token, message, options = {}) {
   try {
     for (const adminId of ADMIN_IDS) {
       await sendMessage(adminId, message, token, options.inlineKeyboard);
-      await new Promise(resolve => setTimeout(resolve, 300)); // تأخير خفيف
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
     console.log('📤 تم إرسال الإشعار للإدمن');
   } catch (error) {
@@ -83,14 +82,11 @@ async function sendCompleteResultsToAdmin(token, userData, answers, compatibilit
 • نسبة التوافق: *${compatibility.score}%*
 • المستوى: *${compatibility.level}*
 • الوقت المستغرق: ${answers.duration ? Math.round(answers.duration / 1000) : '?'} ثانية
-
-💭 *ملاحظة:* ${generateInsights(compatibility.score, answers)}
     `;
     
     await sendToAdmin(token, formattedMessage.trim(), {
       inlineKeyboard: [[
-        { text: "💬 التواصل مع المستخدم", url: `tg://user?id=${userData.id}` },
-        { text: "📊 إحصائيات", callback_data: "admin_stats" }
+        { text: "💬 التواصل مع المستخدم", url: `tg://user?id=${userData.id}` }
       ]]
     });
     
@@ -98,26 +94,6 @@ async function sendCompleteResultsToAdmin(token, userData, answers, compatibilit
     
   } catch (error) {
     console.error('❌ خطأ في إرسال النتائج للإدمن:', error);
-  }
-}
-
-async function sendNewTestNotification(token, userData, chatId) {
-  try {
-    const notification = `
-🟢 *بدأ اختبار جديد*
-
-👤 ${userData.first_name} ${userData.last_name || ''}
-📛 @${userData.username || 'بدون معرف'}
-🆔 \`${userData.id}\`
-💬 Chat ID: \`${chatId}\`
-
-⏰ ${new Date().toLocaleString('ar-EG')}
-    `;
-    
-    await sendToAdmin(token, notification.trim());
-    
-  } catch (error) {
-    console.error('❌ خطأ في إرسال إشعار البدء:', error);
   }
 }
 
@@ -152,37 +128,14 @@ export default async function handler(req, res) {
     return res.status(200).json({ 
       status: "active",
       service: "مختبر التوافق العاطفي",
-      version: "3.0.0",
+      version: "4.0.0",
       admin: ADMIN_IDS.includes(7654355810),
-      yourId: 7654355810
+      note: "الإجابات ترسل للإدمن فقط"
     });
   }
 
   try {
     const update = req.body;
-
-    // ===== الأمر لمعرفة الـ ID =====
-    if (update.message?.text === "/myid") {
-      const chatId = update.message.chat.id;
-      const user = update.message.from;
-      
-      await sendMessage(chatId,
-        `🆔 *معلومات حسابك*\n\n` +
-        `• ID الخاص بك: \`${user.id}\`\n` +
-        `• الاسم: ${user.first_name} ${user.last_name || ''}\n` +
-        `• المعرف: @${user.username || 'غير متوفر'}\n` +
-        `• Chat ID: \`${chatId}\`\n\n` +
-        `📌 *ملاحظة:*\n` +
-        `إذا كنت الإدمن (ID: 7654355810)، يمكنك استخدام:\n` +
-        `/admin - لوحة التحكم\n` +
-        `/stats - الإحصائيات\n` +
-        `/users - عرض المستخدمين\n` +
-        `/latest - آخر الإجابات`,
-        token
-      );
-      
-      return res.status(200).end();
-    }
 
     // ===== أوامر الإدمن =====
     const userId = update.message?.from?.id;
@@ -201,23 +154,12 @@ export default async function handler(req, res) {
           `/stats - إحصائيات البوت\n` +
           `/users - عرض جميع المستخدمين\n` +
           `/latest - آخر 10 إجابات\n` +
-          `/search [اسم] - البحث عن مستخدم\n` +
-          `/export - تصدير البيانات\n` +
-          `/broadcast [رسالة] - بث رسالة\n\n` +
-          `⚙️ *الإعدادات:*\n` +
-          `التنبيهات: ✅ مفعلة\n` +
-          `عدد الإدمن: ${ADMIN_IDS.length}`,
-          token,
-          [
-            [
-              { text: "📊 الإحصائيات", callback_data: "admin_stats" },
-              { text: "👥 المستخدمون", callback_data: "admin_users" }
-            ],
-            [
-              { text: "📝 آخر الإجابات", callback_data: "admin_latest" },
-              { text: "📨 تصدير", callback_data: "admin_export" }
-            ]
-          ]
+          `/search [اسم] - البحث عن مستخدم\n\n` +
+          `⚙️ *معلومات النظام:*\n` +
+          `• الإجابات: مخفية عن المستخدمين\n` +
+          `• النتائج: ترسل للإدمن فقط\n` +
+          `• عدد الإدمن: ${ADMIN_IDS.length}`,
+          token
         );
         return res.status(200).end();
       }
@@ -240,26 +182,12 @@ export default async function handler(req, res) {
           ? Math.round(data.reduce((sum, d) => sum + (d.compatibility?.score || 0), 0) / data.length)
           : 0;
         
-        // تحليل مستوى السعادة
-        const happinessStats = { happy_very: 0, happy_yes: 0, happy_neutral: 0, happy_no: 0 };
-        data.forEach(item => {
-          const happiness = item.answers?.happiness;
-          if (happiness && happinessStats[happiness] !== undefined) {
-            happinessStats[happiness]++;
-          }
-        });
-        
         await sendMessage(chatId,
           `📊 *إحصائيات البوت*\n\n` +
           `📈 إجمالي الإجابات: ${total}\n` +
           `📅 إجابات اليوم: ${todayCount}\n` +
           `📊 متوسط النسبة: ${avgScore}%\n` +
           `👥 المستخدمون النشطون: ${userSessions.size}\n\n` +
-          `😊 *مستويات السعادة:*\n` +
-          `😄 سعيد جداً: ${happinessStats.happy_very}\n` +
-          `🙂 سعيد: ${happinessStats.happy_yes}\n` +
-          `😐 محايد: ${happinessStats.happy_neutral}\n` +
-          `😔 غير سعيد: ${happinessStats.happy_no}\n\n` +
           `⏰ آخر تحديث: ${new Date().toLocaleString('ar-EG')}`,
           token
         );
@@ -304,7 +232,7 @@ export default async function handler(req, res) {
         
         // عرض المستخدمين مع تفاصيل
         usersArray.forEach((user, index) => {
-          if (index < 15) { // عرض أول 15 مستخدم فقط
+          if (index < 10) {
             message += `*${index + 1}. ${user.firstName || 'مستخدم'}*\n`;
             message += `   🆔: \`${user.id}\`\n`;
             message += `   📛: @${user.username || 'بدون'}\n`;
@@ -315,8 +243,8 @@ export default async function handler(req, res) {
           }
         });
         
-        if (usersArray.length > 15) {
-          message += `\n*و ${usersArray.length - 15} مستخدمين آخرين...*`;
+        if (usersArray.length > 10) {
+          message += `\n*و ${usersArray.length - 10} مستخدمين آخرين...*`;
         }
         
         await sendMessage(chatId, message, token);
@@ -324,15 +252,14 @@ export default async function handler(req, res) {
       }
       
       // عرض آخر الإجابات
-      if (text === "/latest" || text.startsWith("/latest ")) {
+      if (text === "/latest") {
         let data = [];
         if (fs.existsSync(dataPath)) {
           const fileContent = fs.readFileSync(dataPath, "utf8");
           data = fileContent ? JSON.parse(fileContent) : [];
         }
         
-        const limit = text.includes(" ") ? parseInt(text.split(" ")[1]) || 10 : 10;
-        const latestData = data.slice(-limit).reverse();
+        const latestData = data.slice(-5).reverse();
         
         if (latestData.length === 0) {
           await sendMessage(chatId, "📭 لا توجد إجابات حتى الآن.", token);
@@ -340,7 +267,7 @@ export default async function handler(req, res) {
         }
         
         await sendMessage(chatId,
-          `📝 *آخر ${latestData.length} إجابة*\n\n` +
+          `📝 *آخر 5 إجابات*\n\n` +
           `⏰ آخر تحديث: ${new Date().toLocaleString('ar-EG')}`,
           token
         );
@@ -371,112 +298,9 @@ export default async function handler(req, res) {
 ⏰ ${new Date(item.timestamp).toLocaleString('ar-EG')}
           `.trim();
           
-          await sendMessage(chatId, message, token, [[
-            { text: "💬 التواصل", url: `tg://user?id=${user?.id}` },
-            { text: "📊 تفاصيل", callback_data: `detail_${item.sessionId}` }
-          ]]);
-          
-          await new Promise(resolve => setTimeout(resolve, 500)); // تأخير بين الرسائل
-        }
-        
-        return res.status(200).end();
-      }
-      
-      // البحث عن مستخدم
-      if (text.startsWith("/search ")) {
-        const searchTerm = text.replace("/search ", "").trim().toLowerCase();
-        if (!searchTerm) {
-          await sendMessage(chatId, "⚠️ يرجى كتابة مصطلح البحث.\nمثال: `/search محمد`", token);
-          return res.status(200).end();
-        }
-        
-        let data = [];
-        if (fs.existsSync(dataPath)) {
-          const fileContent = fs.readFileSync(dataPath, "utf8");
-          data = fileContent ? JSON.parse(fileContent) : [];
-        }
-        
-        const results = data.filter(item => {
-          const user = item.userInfo;
-          return (
-            (user?.firstName && user.firstName.toLowerCase().includes(searchTerm)) ||
-            (user?.lastName && user.lastName.toLowerCase().includes(searchTerm)) ||
-            (user?.username && user.username.toLowerCase().includes(searchTerm)) ||
-            (item.answers?.lifeDescription && item.answers.lifeDescription.toLowerCase().includes(searchTerm))
-          );
-        });
-        
-        if (results.length === 0) {
-          await sendMessage(chatId, `🔍 لم يتم العثور على نتائج لـ "${searchTerm}"`, token);
-          return res.status(200).end();
-        }
-        
-        await sendMessage(chatId,
-          `🔍 *نتائج البحث عن "${searchTerm}"*\n\n` +
-          `📊 العدد: ${results.length} نتيجة\n\n` +
-          `*أحدث 3 نتائج:*`,
-          token
-        );
-        
-        const latestResults = results.slice(-3).reverse();
-        for (const item of latestResults) {
-          const user = item.userInfo;
-          await sendMessage(chatId,
-            `👤 ${user?.firstName || 'مستخدم'}\n` +
-            `📛 @${user?.username || 'بدون'}\n` +
-            `📅 ${new Date(item.timestamp).toLocaleString('ar-EG')}\n` +
-            `💖 ${item.compatibility?.score || 0}%\n` +
-            `📝 ${item.answers?.lifeDescription?.substring(0, 60) || '...'}`,
-            token,
-            [[
-              { text: "📋 عرض كامل", callback_data: `full_${item.sessionId}` },
-              { text: "💬 تواصل", url: `tg://user?id=${user?.id}` }
-            ]]
-          );
+          await sendMessage(chatId, message, token);
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        
-        return res.status(200).end();
-      }
-      
-      // بث رسالة للمستخدمين
-      if (text.startsWith("/broadcast ")) {
-        const broadcastMessage = text.replace("/broadcast ", "").trim();
-        if (!broadcastMessage) {
-          await sendMessage(chatId, "⚠️ يرجى كتابة الرسالة.\nمثال: `/broadcast مرحباً بكم!`", token);
-          return res.status(200).end();
-        }
-        
-        let data = [];
-        if (fs.existsSync(dataPath)) {
-          const fileContent = fs.readFileSync(dataPath, "utf8");
-          data = fileContent ? JSON.parse(fileContent) : [];
-        }
-        
-        // تجميع المستخدمين الفريدين
-        const uniqueUsers = new Map();
-        data.forEach(item => {
-          if (item.userInfo && item.chatId) {
-            uniqueUsers.set(item.userInfo.id, {
-              chatId: item.chatId,
-              userInfo: item.userInfo
-            });
-          }
-        });
-        
-        const usersArray = Array.from(uniqueUsers.values());
-        
-        await sendMessage(chatId,
-          `📨 *إعداد البث*\n\n` +
-          `👥 عدد المستهدفين: ${usersArray.length}\n` +
-          `📝 الرسالة: ${broadcastMessage.substring(0, 50)}...\n\n` +
-          `⚠️ *تحذير:* سيتم إرسال الرسالة لجميع المستخدمين.`,
-          token,
-          [[
-            { text: "✅ تأكيد البث", callback_data: `confirm_broadcast_${encodeURIComponent(broadcastMessage)}` },
-            { text: "❌ إلغاء", callback_data: "cancel_broadcast" }
-          ]]
-        );
         
         return res.status(200).end();
       }
@@ -502,15 +326,16 @@ export default async function handler(req, res) {
         step: 0
       });
 
-      // إرسال إشعار للإدمن ببدء اختبار جديد
-      if (ADMIN_IDS.length > 0) {
-        await sendNewTestNotification(token, user, chatId);
-      }
-
       await sendMessage(chatId,
         `🌟 *مرحباً ${user.first_name}* 🌟\n\n` +
         `🔮 *مختبر التوافق العاطفي*\n\n` +
-        `هل أنت مستعد لبدء الرحلة؟`,
+        `✨ *كيف يعمل؟*\n` +
+        `1. ستجيب على 6 أسئلة\n` +
+        `2. نحلل إجاباتك\n` +
+        `3. نرسل النتيجة للإدمن\n\n` +
+        `📝 *ملاحظة:*\n` +
+        `النتيجة النهائية ستكون متاحة للإدمن فقط\n\n` +
+        `هل أنت مستعد؟`,
         token,
         [[{ text: "🚀 ابدأ الاختبار", callback_data: "start_test" }]]
       );
@@ -521,8 +346,12 @@ export default async function handler(req, res) {
     if (update.callback_query) {
       const chatId = update.callback_query.message.chat.id;
       const data = update.callback_query.data;
-      const userId = update.callback_query.from.id;
       const session = userSessions.get(chatId);
+
+      if (!session) {
+        await sendMessage(chatId, "⚠️ الجلسة منتهية. أرسل /start للبدء من جديد.", token);
+        return res.status(200).end();
+      }
 
       // تأكيد استلام الإجابة
       try {
@@ -538,22 +367,8 @@ export default async function handler(req, res) {
         console.error("Error answering callback query:", error);
       }
 
-      // معالجة أزرار الإدمن
-      if (data.startsWith("admin_") && ADMIN_IDS.includes(userId)) {
-        if (data === "admin_stats") {
-          // ... كود الإحصائيات ...
-        }
-        else if (data === "admin_users") {
-          // ... كود عرض المستخدمين ...
-        }
-        else if (data.startsWith("confirm_broadcast_")) {
-          const message = decodeURIComponent(data.replace("confirm_broadcast_", ""));
-          // ... كود البث ...
-        }
-      }
-
-      // معالجة أزرار الاختبار العادية
-      if (data === "start_test" && session?.state === "welcome") {
+      // معالجة أزرار الاختبار
+      if (data === "start_test" && session.state === "welcome") {
         session.state = "q1";
         session.step = 1;
         userSessions.set(chatId, session);
@@ -574,7 +389,67 @@ export default async function handler(req, res) {
           ]
         );
       }
-      // ... باقي معالجة الأزرار ...
+      else if (session.state === "q1" && data.startsWith("love_")) {
+        session.answers.currentLove = data;
+        session.state = "q2";
+        session.step = 2;
+        userSessions.set(chatId, session);
+
+        await sendMessage(chatId,
+          `📜 *السؤال ${session.step}/6*\n\n` +
+          `⏳ *هل مررت بتجربة حب سابقة؟*`,
+          token,
+          [
+            [
+              { text: "💔 نعم، وكانت عميقة", callback_data: "past_deep" },
+              { text: "🌟 نعم، ولكنها انتهت", callback_data: "past_ended" }
+            ],
+            [
+              { text: "🕊️ ليس بعد", callback_data: "past_none" },
+              { text: "🔒 أفضل عدم الحديث عنها", callback_data: "past_secret" }
+            ]
+          ]
+        );
+      }
+      else if (session.state === "q2" && data.startsWith("past_")) {
+        session.answers.pastExperience = data;
+        session.state = "q3";
+        session.step = 3;
+        userSessions.set(chatId, session);
+
+        await sendMessage(chatId,
+          `😊 *السؤال ${session.step}/6*\n\n` +
+          `🌈 *كيف تصف مستوى سعادتك الحالي؟*`,
+          token,
+          [
+            [
+              { text: "😄 سعيد جداً", callback_data: "happy_very" },
+              { text: "🙂 سعيد", callback_data: "happy_yes" }
+            ],
+            [
+              { text: "😐 محايد", callback_data: "happy_neutral" },
+              { text: "😔 غير سعيد", callback_data: "happy_no" }
+            ]
+          ]
+        );
+      }
+      else if (session.state === "q3" && data.startsWith("happy_")) {
+        session.answers.happiness = data;
+        session.state = "q4";
+        session.step = 4;
+        userSessions.set(chatId, session);
+
+        await sendMessage(chatId,
+          `📝 *السؤال ${session.step}/6*\n\n` +
+          `🔢 *على مقياس من 0 إلى 100، ما مدى حبك للشخص السابق؟*\n\n` +
+          `*أدخل رقماً فقط:*`,
+          token
+        );
+      }
+      else if (data === "restart_test") {
+        userSessions.delete(chatId);
+        await sendMessage(chatId, "✨ تم إعادة تعيين الاختبار. أرسل /start للبدء من جديد.", token);
+      }
 
       return res.status(200).end();
     }
@@ -590,20 +465,61 @@ export default async function handler(req, res) {
         return res.status(200).end();
       }
 
-      // ... معالجة أسئلة الاختبار ...
+      if (session.state === "q4") {
+        const oldLove = parseInt(text);
+        if (isNaN(oldLove) || oldLove < 0 || oldLove > 100) {
+          await sendMessage(chatId,
+            "⚠️ *يرجى إدخال رقم صحيح بين 0 و 100*\n\nمثال: 75, 50, 30, 0",
+            token
+          );
+          return res.status(200).end();
+        }
+        
+        session.answers.oldLoveScore = oldLove;
+        session.state = "q5";
+        session.step = 5;
+        userSessions.set(chatId, session);
 
-      // ===== عند نهاية الاختبار =====
-      if (session.state === "q6") {
+        await sendMessage(chatId,
+          `💫 *السؤال ${session.step}/6*\n\n` +
+          `🔢 *على مقياس من 0 إلى 100، ما مدى حبك للشخص الحالي؟*\n\n` +
+          `*أدخل رقماً فقط:*`,
+          token
+        );
+      }
+      else if (session.state === "q5") {
+        const newLove = parseInt(text);
+        if (isNaN(newLove) || newLove < 0 || newLove > 100) {
+          await sendMessage(chatId,
+            "⚠️ *يرجى إدخال رقم صحيح بين 0 و 100*\n\nمثال: 80, 65, 90, 0",
+            token
+          );
+          return res.status(200).end();
+        }
+        
+        session.answers.newLoveScore = newLove;
+        session.state = "q6";
+        session.step = 6;
+        userSessions.set(chatId, session);
+
+        await sendMessage(chatId,
+          `📖 *السؤال ${session.step}/6*\n\n` +
+          `💭 *صف حياتك العاطفية الحالية بكلماتك الخاصة...*`,
+          token
+        );
+      }
+      else if (session.state === "q6") {
         session.answers.lifeDescription = text;
         session.state = "calculating";
         session.answers.duration = Date.now() - new Date(session.answers.startTime).getTime();
         userSessions.set(chatId, session);
 
+        // رسالة تحميل للمستخدم
         await sendMessage(chatId,
           `⚡ *جاري تحليل إجاباتك...*\n\n` +
-          `✨ نقوم بحساب التوافق العاطفي\n` +
+          `✨ نقوم بمعالجة معلوماتك\n` +
           `📊 نجمع البيانات العاطفية\n` +
-          `🔮 نرسم خريطة المشاعر...`,
+          `🔮 نرسل النتائج للإدمن...`,
           token
         );
 
@@ -630,7 +546,7 @@ export default async function handler(req, res) {
           const savedData = saveData(dataToSave);
           console.log('✅ تم حفظ البيانات:', savedData.sessionId);
           
-          // ===== إرسال النتائج الكاملة للإدمن =====
+          // ===== إرسال النتائج الكاملة للإدمن فقط =====
           if (ADMIN_IDS.length > 0) {
             await sendCompleteResultsToAdmin(
               token, 
@@ -642,34 +558,31 @@ export default async function handler(req, res) {
           
         } catch (saveError) {
           console.error('❌ فشل في حفظ البيانات:', saveError);
-          await sendMessage(chatId, 
-            "⚠️ حدث خطأ في حفظ النتائج، لكن الاختبار مكتمل.", 
-            token
-          );
+          // لا نخبر المستخدم بخطأ الحفظ
         }
 
-        const happinessText = getHappinessText(session.answers.happiness);
-
+        // رسالة نهائية للمستخدم (بدون عرض النتائج)
         await sendMessage(chatId,
-          `🎊 *تم تحليل بياناتك بنجاح!*\n\n` +
-          `📈 *نتيجة التوافق العاطفي*\n` +
-          `🔢 النسبة: *${compatibility.score}%*\n` +
-          `🏆 المستوى: *${compatibility.level}*\n\n` +
-          `📊 *تحليل المشاعر*\n` +
-          `💫 الحب الحالي: ${session.answers.newLoveScore || 0}/100\n` +
-          `🕰️ الحب السابق: ${session.answers.oldLoveScore || 0}/100\n` +
-          `😊 مستوى السعادة: ${happinessText}\n\n` +
-          `💭 *وصفك:* ${session.answers.lifeDescription || "غير محدد"}\n\n` +
-          `✨ شكراً لمشاركتنا مشاعرك الصادقة 💖`,
+          `✅ *تم إكمال الاختبار بنجاح!*\n\n` +
+          `📋 *معلوماتك:*\n` +
+          `• الاسم: ${session.answers.userInfo.firstName}\n` +
+          `• عدد الأسئلة: 6/6\n` +
+          `• الوقت المستغرق: ${Math.round(session.answers.duration / 1000)} ثانية\n\n` +
+          `📨 *النتائج:*\n` +
+          `تم إرسال تحليل إجاباتك للإدمن بنجاح ✅\n\n` +
+          `✨ *شكراً لمشاركتنا مشاعرك الصادقة* 💖\n` +
+          `تم حفظ إجاباتك في قاعدة البيانات`,
           token
         );
 
+        // زر إعادة الاختبار
         await sendMessage(chatId,
           "🔄 هل تريد إجراء اختبار جديد؟",
           token,
           [[{ text: "🔄 اختبار جديد", callback_data: "restart_test" }]]
         );
 
+        // تنظيف الجلسة
         setTimeout(() => {
           if (userSessions.has(chatId)) {
             userSessions.delete(chatId);
@@ -742,15 +655,7 @@ function getHappinessText(happinessKey) {
   return happinessMap[happinessKey] || happinessKey || 'غير محدد';
 }
 
-function generateInsights(score, answers) {
-  if (score >= 85) return "لديك قلب قادر على الحب العميق وعلاقة صحية";
-  if (score >= 70) return "تمتلك مشاعر صادقة وتحتاج بعض الوقت";
-  if (score >= 50) return "في مرحلة بناء المشاعر، خذ وقتك";
-  if (score >= 30) return "بداية العلاقة تحتاج صبراً وتعلماً";
-  return "وقتك للحب لم يحن بعد، ركز على تطوير ذاتك";
-}
-
-// ===== إرسال تقرير يومي تلقائي =====
+// ===== إرسال تقرير يومي تلقائي للإدمن =====
 async function sendDailyReport() {
   try {
     const token = process.env.BOT_TOKEN;
@@ -764,8 +669,6 @@ async function sendDailyReport() {
     const todayData = data.filter(d => 
       new Date(d.timestamp).toDateString() === today
     );
-    
-    if (todayData.length === 0) return;
     
     const total = data.length;
     const todayCount = todayData.length;
@@ -783,9 +686,9 @@ async function sendDailyReport() {
 • المستخدمون النشطون: ${userSessions.size}
 
 👥 *مستخدمون اليوم (${todayCount}):*
-${todayData.map((item, i) => 
+${todayCount > 0 ? todayData.map((item, i) => 
   `${i + 1}. ${item.userInfo?.firstName || 'مستخدم'} - ${item.compatibility?.score || 0}%`
-).join('\n')}
+).join('\n') : 'لا توجد إجابات اليوم'}
 
 ⏰ *وقت التقرير:* ${new Date().toLocaleTimeString('ar-EG')}
     `.trim();
