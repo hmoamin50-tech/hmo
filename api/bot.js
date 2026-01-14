@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   const token = process.env.BOT_TOKEN;
   const update = req.body;
 
-  // START
+  // ========== START ==========
   if (update.message?.text === "/start") {
     const chatId = update.message.chat.id;
 
@@ -16,19 +16,28 @@ export default async function handler(req, res) {
       token,
       [["نعم", "لا"]]
     );
+
+    return res.status(200).end();
   }
 
-  // CALLBACK QUERY
+  // ========== CALLBACK QUERY ==========
   if (update.callback_query) {
     const chatId = update.callback_query.message.chat.id;
     const data = update.callback_query.data;
 
-    await sendMessage(chatId, `لقد اخترت: ${data}\nتابع الإجابة على الأسئلة لاحقًا 😉`, token);
+    // رسالة تأكيد الاختيار
+    await sendMessage(chatId,
+      `لقد اخترت: ${data}\nتابع الإجابة على باقي الأسئلة لاحقًا 😉`,
+      token
+    );
+
+    return res.status(200).end();
   }
 
   res.status(200).end();
 }
 
+// ========== دالة إرسال الرسائل ==========
 async function sendMessage(chatId, text, token, buttons = null) {
   const body = { chat_id: chatId, text, parse_mode: "Markdown" };
 
@@ -43,4 +52,4 @@ async function sendMessage(chatId, text, token, buttons = null) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-                }
+    }
