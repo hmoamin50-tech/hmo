@@ -4,150 +4,138 @@ import path from "path";
 const API = (token, method) =>
   `https://api.telegram.org/bot${token}/${method}`;
 
-const dataPath = path.join(process.cwd(), "data/users.json");
-const questionsPath = path.join(process.cwd(), "data/questions.json");
+const states = {};
+const answers = {};
 
-// قراءة الأسئلة
-function getQuestions() {
-  return JSON.parse(fs.readFileSync(questionsPath, "utf8"));
-}
+const dataPath = path.join(process.cwd(), "data/responses.json");
 
-// دوال حفظ واسترجاع المستخدمين
-function readData() {
-  if (!fs.existsSync(dataPath)) fs.writeFileSync(dataPath, "[]");
-  return JSON.parse(fs.readFileSync(dataPath, "utf8"));
-}
-
-function writeData(data) {
+// دالة لحفظ البيانات نهائياً
+function saveData(entry) {
+  let data = [];
+  if (fs.existsSync(dataPath)) {
+    data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+  }
+  data.push(entry);
   fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
 }
 
-function getUser(chatId) {
-  const data = readData();
-  let user = data.find(u => u.chatId === chatId);
-  if (!user) {
-    user = { chatId, state: "q1", answers: {} };
-    data.push(user);
-    writeData(data);
-  }
-  return user;
-}
-
-function updateUser(chatId, newData) {
-  const data = readData();
-  const index = data.findIndex(u => u.chatId === chatId);
-  if (index !== -1) {
-    data[index] = { ...data[index], ...newData };
-  } else {
-    data.push({ chatId, ...newData });
-  }
-  writeData(data);
-}
-
-// حساب نسبة الانجذاب
+// دالة حساب نسبة الانجذاب
 function calcAttraction(oldLove, newLove, happy) {
   let base = (newLove * 0.7 + oldLove * 0.3);
   if (happy === "نعم") base += 10;
   return Math.min(100, Math.round(base));
 }
 
-// دالة للانتقال للسؤال التالي
-function nextQuestion(user) {
-  const questions = getQuestions();
-  const idx = questions.findIndex(q => q.id === user.state);
-  if (idx === -1 || idx === questions.length - 1) return null;
-  return questions[idx + 1];
-}
-
-// ===== البوت الرئيسي =====
 export default async function handler(req, res) {
   const token = process.env.BOT_TOKEN;
   if (req.method !== "POST") return res.status(200).send("Running");
 
   const update = req.body;
-  let chatId = null;
-  let user = null;
-  const questions = getQuestions();
 
-  // ===== /start =====
+  // ===== بدء التحدي =====
   if (update.message?.text === "/start") {
-    chatId = update.message.chat.id;
-    user = getUser(chatId);
-    user.state = questions[0].id;
-    updateUser(chatId, user);
+    const chatId = update.message.chat.id;
+    states[chatId] = "q1";
+    answers[chatId] = { user: update.message.from };
 
-    await sendQuestion(chatId, questions[0], token);
+    await sendMessage(chatId,
+      "🧩 *تحدي: اعرف مدى تناسقك*\n\nهل أنت مغرم بأحدهم؟",
+      token,
+      [["نعم", "لا"]]
+    );
     return res.status(200).end();
   }
 
-  // ===== CALLBACK QUERY =====
+  // ===== أزرار =====
   if (update.callback_query) {
-    chatId = update.callback_query.message.chat.id;
+    const chatId = update.callback_query.message.chat.id;
     const data = update.callback_query.data;
-    user = getUser(chatId);
 
-    // حفظ الإجابة
-    user.answers[user.state] = data;
+    switch (states[chatId]) {
+      case "q1":
+        answers[chatId].inLove = data;
+        states[chatId] = "q2";
+        await sendMessage(chatId,
+          "هل سبق لك وأن أحببت شخصًا غيره؟",
+          token,
+          [["نعم", "لا"]]
+        );
+        break;
 
-    // الانتقال للسؤال التالي
-    const nextQ = nextQuestion(user);
-    if (nextQ) {
-      user.state = nextQ.id;
-      updateUser(chatId, user);
-      await sendQuestion(chatId, nextQ, token);
-    } else {
-      // نهاية التحدي
-      const attraction = calcAttraction(
-        Number(user.answers.q3),
-        Number(user.answers.q4),
-        user.answers.q5
-      );
-      user.answers.attraction = attraction;
-      user.state = "done";
-      updateUser(chatId, user);
-
-      await sendMessage(chatId,
-`🔮 *النتيجة النهائية*
-نسبة انجذابك: *${attraction}%*
-
-🤫 البوت يعرف أكثر مما تتوقع…
-براءة… أنا أحبك جدًا جدًا 🤣🖤`, token);
+      case "q2":
+        answers[chatId].lovedBefore = data;
+        states[chatId] = "q3";
+        await sendMessage(chatId,
+          "أدخل *نسبة حبك للشخص القديم* (0 – 100)",
+          token
+        );
+        break;
     }
+
     return res.status(200).end();
   }
 
-  // ===== الرسائل النصية =====
+  // ===== نص / أرقام =====
   if (update.message?.text) {
-    chatId = update.message.chat.id;
+    const chatId = update.message.chat.id;
     const text = update.message.text;
-    user = getUser(chatId);
 
-    const q = questions.find(q => q.id === user.state && q.type === "text");
-    if (q) {
-      user.answers[user.state] = text;
-
-      const nextQ = nextQuestion(user);
-      if (nextQ) {
-        user.state = nextQ.id;
-        updateUser(chatId, user);
-        await sendQuestion(chatId, nextQ, token);
-      } else {
-        const attraction = calcAttraction(
-          Number(user.answers.q3),
-          Number(user.answers.q4),
-          user.answers.q5
+    switch (states[chatId]) {
+      case "q3":
+        answers[chatId].oldLove = Number(text);
+        states[chatId] = "q4";
+        await sendMessage(chatId,
+          "أدخل *نسبة حبك للشخص الحالي* (0 – 100)",
+          token
         );
-        user.answers.attraction = attraction;
-        user.state = "done";
-        updateUser(chatId, user);
+        break;
+
+      case "q4":
+        answers[chatId].newLove = Number(text);
+        states[chatId] = "q5";
+        await sendMessage(chatId,
+          "هل تشعر بالسعادة الآن؟",
+          token,
+          [["نعم", "لا"]]
+        );
+        break;
+
+      case "q5":
+        answers[chatId].happy = text;
+        states[chatId] = "q6";
+        await sendMessage(chatId,
+          "صف حياتك الآن بكلمات صادقة…",
+          token
+        );
+        break;
+
+      case "q6":
+        answers[chatId].lifeDesc = text;
+        states[chatId] = "done";
+
+        const attraction = calcAttraction(
+          answers[chatId].oldLove,
+          answers[chatId].newLove,
+          answers[chatId].happy
+        );
+
+        // حفظ البيانات مرة واحدة
+        saveData({
+          date: new Date().toISOString(),
+          chatId,
+          ...answers[chatId],
+          attraction
+        });
 
         await sendMessage(chatId,
 `🔮 *النتيجة النهائية*
 نسبة انجذابك: *${attraction}%*
 
 🤫 البوت يعرف أكثر مما تتوقع…
-براءة… أنا أحبك جدًا جدًا 🤣🖤`, token);
-      }
+براءة… أنا أحبك جدًا جدًا 🤣🖤`,
+          token
+        );
+        break;
     }
 
     return res.status(200).end();
@@ -156,26 +144,19 @@ export default async function handler(req, res) {
   res.status(200).end();
 }
 
-// ===== دوال إرسال الرسائل =====
-async function sendQuestion(chatId, q, token) {
-  if (q.type === "button") {
-    await sendMessage(chatId, q.text, token, [q.options]);
-  } else {
-    await sendMessage(chatId, q.text, token);
-  }
-}
-
+// ===== دالة إرسال الرسائل =====
 async function sendMessage(chatId, text, token, buttons = null) {
   const body = { chat_id: chatId, text, parse_mode: "Markdown" };
+
   if (buttons) {
     body.reply_markup = {
       inline_keyboard: buttons.map(row => row.map(b => ({ text: b, callback_data: b })))
     };
   }
 
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  await fetch(`${API(token, "sendMessage")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-}
+          }
