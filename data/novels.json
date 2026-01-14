@@ -1,0 +1,98 @@
+[
+  {
+    "id": 1,
+    "title": "أرض زيكولا",
+    "author": "عمرو عبد الحميد",
+    "category": "فانتازيا",
+    "description": "رواية خيالية تدور أحداثها في أرض لا يُتعامل فيها بالنقود بل بالذكاء.",
+    "pdf": "https://example.com/novels/ard-zikola.pdf"
+  },
+  {
+    "id": 2,
+    "title": "أماريتا",
+    "author": "عمرو عبد الحميد",
+    "category": "فانتازيا",
+    "description": "الجزء الثاني من أرض زيكولا، استمرار للصراع بين البشر والأماريتا.",
+    "pdf": "https://example.com/novels/amarita.pdf"
+  },
+  {
+    "id": 3,
+    "title": "وادي الذئاب المنسية",
+    "author": "عمرو عبد الحميد",
+    "category": "فانتازيا",
+    "description": "الجزء الثالث من سلسلة زيكولا.",
+    "pdf": "https://example.com/novels/wadi-alziab.pdf"
+  },
+  {
+    "id": 4,
+    "title": "يوتوبيا",
+    "author": "أحمد خالد توفيق",
+    "category": "ديستوبيا",
+    "description": "رواية سوداوية تتناول مستقبلًا مظلمًا للمجتمع.",
+    "pdf": "https://example.com/novels/utopia.pdf"
+  },
+  {
+    "id": 5,
+    "title": "الفيل الأزرق",
+    "author": "أحمد مراد",
+    "category": "غموض",
+    "description": "رواية نفسية غامضة تدور داخل مستشفى العباسية.",
+    "pdf": "https://example.com/novels/blue-elephant.pdf"
+  },
+  {
+    "id": 6,
+    "title": "تراب الماس",
+    "author": "أحمد مراد",
+    "category": "جريمة",
+    "description": "رواية تشويق وجريمة عن طبيب شاب يتورط في عالم مظلم.",
+    "pdf": "https://example.com/novels/torab-almas.pdf"
+  },
+  {
+    "id": 7,
+    "title": "هيبتا",
+    "author": "محمد صادق",
+    "category": "رومانسي",
+    "description": "رواية عن مراحل الحب السبعة بأسلوب فلسفي عاطفي.",
+    "pdf": "https://example.com/novels/hepta.pdf"
+  },
+  {
+    "id": 8,
+    "title": "أن تبقى",
+    "author": "محمد صادق",
+    "category": "رومانسي",
+    "description": "رواية تناقش العلاقات الإنسانية والصراعات العاطفية.",
+    "pdf": "https://example.com/novels/an-tabqa.pdf"
+  },
+  {
+    "id": 9,
+    "title": "رجال في الشمس",
+    "author": "غسان كنفاني",
+    "category": "سياسي",
+    "description": "رواية فلسطينية رمزية عن اللجوء والمعاناة.",
+    "pdf": "https://example.com/novels/rijal-fi-alshams.pdf"
+  },
+  {
+    "id": 10,
+    "title": "1984",
+    "author": "George Orwell",
+    "category": "سياسي",
+    "description": "رواية عالمية عن الاستبداد والمراقبة.",
+    "pdf": "https://example.com/novels/1984.pdf"
+  },
+  {
+    "id": 11,
+    "title": "الخيميائي",
+    "author": "Paulo Coelho",
+    "category": "فلسفي",
+    "description": "رحلة شاب بحثًا عن تحقيق الأسطورة الشخصية.",
+    "pdf": "https://example.com/novels/the-alchemist.pdf"
+  },
+  {
+    "id": 12,
+    "title": "العطر",
+    "author": "Patrick Süskind",
+    "category": "غموض",
+    "description": "قصة قاتل يملك حاسة شم خارقة.",
+    "pdf": "https://example.com/novels/perfume.pdf"
+  }
+    ]
