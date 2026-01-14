@@ -1,65 +1,109 @@
 import fs from "fs";
 import path from "path";
 
-const novelsPath = path.join(process.cwd(), "data/novels.json");
+const dataPath = path.join(process.cwd(), "data/novels.json");
+const novels = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+
+const API = (token, method) =>
+  `https://api.telegram.org/bot${token}/${method}`;
 
 export default async function handler(req, res) {
+  const token = process.env.BOT_TOKEN;
+
   if (req.method !== "POST") {
-    return res.status(200).send("📚 Novel Bot is running");
+    return res.status(200).send("📚 Novel Bot Running");
   }
 
-  const message = req.body.message;
-  if (!message) return res.status(200).end();
+  const update = req.body;
 
-  const chatId = message.chat.id;
-  const text = message.text?.trim();
-
-  if (!text) return res.status(200).end();
-
-  if (text === "/start") {
-    await sendMessage(chatId,
-`📚 أهلاً بك في بوت تحميل الروايات
-✍️ اكتب اسم الرواية فقط
-مثال: أرض زيكولا`);
+  // ========= START =========
+  if (update.message?.text === "/start") {
+    await sendCategories(update.message.chat.id, token);
     return res.status(200).end();
   }
 
-  const novels = JSON.parse(fs.readFileSync(novelsPath, "utf8"));
+  // ========= CALLBACK =========
+  if (update.callback_query) {
+    const chatId = update.callback_query.message.chat.id;
+    const data = update.callback_query.data;
 
-  const results = novels.filter(n =>
-    n.title.includes(text)
-  );
+    if (data === "back_categories") {
+      await sendCategories(chatId, token);
+    }
 
-  if (results.length === 0) {
-    await sendMessage(chatId, "❌ لم يتم العثور على الرواية");
-    return res.status(200).end();
-  }
+    if (data.startsWith("cat_")) {
+      const category = data.replace("cat_", "");
+      await sendNovelsByCategory(chatId, category, token);
+    }
 
-  for (const novel of results) {
-    await sendDocument(chatId, novel.pdf, `${novel.title} - ${novel.author}`);
+    if (data.startsWith("novel_")) {
+      const id = parseInt(data.replace("novel_", ""));
+      const novel = novels.find(n => n.id === id);
+      if (novel) {
+        await sendNovelDetails(chatId, novel, token);
+      }
+    }
   }
 
   res.status(200).end();
 }
 
-// 🔹 إرسال رسالة
-async function sendMessage(chatId, text) {
-  await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text })
-  });
-}
+// ============ UI FUNCTIONS ============
 
-// 🔹 إرسال PDF
-async function sendDocument(chatId, fileUrl, caption) {
-  await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendDocument`, {
+async function sendCategories(chatId, token) {
+  const categories = [...new Set(novels.map(n => n.category))];
+
+  const keyboard = categories.map(cat => [
+    { text: cat, callback_data: `cat_${cat}` }
+  ]);
+
+  await fetch(API(token, "sendMessage"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      document: fileUrl,
-      caption
+      text: "📚 اختر نوع الرواية:",
+      reply_markup: { inline_keyboard: keyboard }
+    })
+  });
+}
+
+async function sendNovelsByCategory(chatId, category, token) {
+  const list = novels
+    .filter(n => n.category === category)
+    .map(n => [{ text: n.title, callback_data: `novel_${n.id}` }]);
+
+  list.push([{ text: "🔙 رجوع للأنواع", callback_data: "back_categories" }]);
+
+  await fetch(API(token, "sendMessage"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: `📖 روايات ${category}:`,
+      reply_markup: { inline_keyboard: list }
+    })
+  });
+}
+
+async function sendNovelDetails(chatId, novel, token) {
+  await fetch(API(token, "sendMessage"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text:
+`📘 *${novel.title}*
+✍️ ${novel.author}
+
+📝 ${novel.description}`,
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⬇️ تحميل الرواية", url: novel.pdf }],
+          [{ text: "🔙 رجوع للأنواع", callback_data: "back_categories" }]
+        ]
+      }
     })
   });
 }
