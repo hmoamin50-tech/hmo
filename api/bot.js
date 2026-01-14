@@ -45,10 +45,14 @@ function calculateCompatibility(oldLove, newLove, happinessLevel) {
   const baseCompatibility = (newLove * 0.65) + (oldLove * 0.35);
   
   let happinessFactor = 0;
-  if (happinessLevel === "happy_very") happinessFactor = 15;
-  else if (happinessLevel === "happy_yes") happinessFactor = 10;
-  else if (happinessLevel === "happy_neutral") happinessFactor = 5;
-  else if (happinessLevel === "happy_no") happinessFactor = -5;
+  const happinessMap = {
+    "happy_very": 15,
+    "happy_yes": 10,
+    "happy_neutral": 5,
+    "happy_no": -5
+  };
+  
+  happinessFactor = happinessMap[happinessLevel] || 0;
   
   const compatibilityScore = Math.min(100, Math.max(0, 
     Math.round(baseCompatibility + happinessFactor)
@@ -74,7 +78,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ 
       status: "active",
       service: "Love Compatibility Bot",
-      version: "2.0.0" 
+      version: "2.1.0" 
     });
   }
 
@@ -129,6 +133,20 @@ export default async function handler(req, res) {
       if (!session) {
         await sendMessage(chatId, "⚠️ الجلسة منتهية. أرسل /start للبدء من جديد.", token);
         return res.status(200).end();
+      }
+
+      // تأكيد استلام الإجابة أولاً
+      try {
+        await fetch(`${API(token, "answerCallbackQuery")}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            callback_query_id: update.callback_query.id,
+            text: "تم استلام إجابتك ✓"
+          })
+        });
+      } catch (error) {
+        console.error("Error answering callback query:", error);
       }
 
       // معالجة اختيار البدء من واجهة الترحيب
@@ -208,24 +226,32 @@ export default async function handler(req, res) {
           ]
         );
       }
+      // معالجة إجابة السؤال الثالث (مستوى السعادة) - هذه هي الإضافة المهمة!
+      else if (session.state === "q3" && data.startsWith("happy_")) {
+        session.answers.happiness = data;
+        session.state = "q4";
+        session.step = 4;
+        userSessions.set(chatId, session);
+
+        await sendMessage(chatId,
+          `📝 *السؤال ${session.step}/6*
+          
+🔢 *على مقياس من 0 إلى 100، ما مدى حبك للشخص السابق؟*
+
+(0 = لا يوجد أي مشاعر، 100 = حب عميق لا ينسى)
+
+*ملاحظة:* إذا لم يكن لديك تجربة سابقة، اكتب 0`,
+          token
+        );
+      }
       // معالجة إعادة الاختبار
       else if (data === "restart_test") {
         userSessions.delete(chatId);
         await sendMessage(chatId, "✨ تم إعادة تعيين الاختبار. أرسل /start للبدء من جديد.", token);
       }
-
-      // تأكيد استلام الإجابة
-      try {
-        await fetch(`${API(token, "answerCallbackQuery")}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            callback_query_id: update.callback_query.id,
-            text: "تم استلام إجابتك ✓"
-          })
-        });
-      } catch (error) {
-        console.error("Error answering callback query:", error);
+      // إذا كانت بيانات غير معروفة
+      else {
+        console.log("Unknown callback data:", data, "for state:", session.state);
       }
 
       return res.status(200).end();
@@ -242,27 +268,8 @@ export default async function handler(req, res) {
         return res.status(200).end();
       }
 
-      // معالجة إجابة السؤال الثالث (النصي)
-      if (session.state === "q3") {
-        // في النسخة السابقة كان هذا يحول إلى رقم، دعنا نجعله نصياً أولاً
-        session.answers.happinessDescription = text;
-        session.state = "q4";
-        session.step = 4;
-        userSessions.set(chatId, session);
-
-        await sendMessage(chatId,
-          `📝 *السؤال ${session.step}/6*
-          
-🔢 *على مقياس من 0 إلى 100، ما مدى حبك للشخص السابق؟*
-
-(0 = لا يوجد أي مشاعر، 100 = حب عميق لا ينسى)
-
-*ملاحظة:* إذا لم يكن لديك تجربة سابقة، اكتب 0`,
-          token
-        );
-      }
       // معالجة إجابة السؤال الرابع (نسبة الحب السابق)
-      else if (session.state === "q4") {
+      if (session.state === "q4") {
         const oldLove = parseInt(text);
         if (isNaN(oldLove) || oldLove < 0 || oldLove > 100) {
           await sendMessage(chatId,
@@ -350,6 +357,9 @@ export default async function handler(req, res) {
         // حفظ البيانات
         saveData(finalData);
 
+        // الحصول على نص السعادة
+        const happinessText = getHappinessText(session.answers.happiness);
+
         // إرسال النتائج
         await sendMessage(chatId,
           `🎊 *تم تحليل بياناتك بنجاح!*\n\n` +
@@ -359,7 +369,8 @@ export default async function handler(req, res) {
           `📊 *تحليل المشاعر*\n` +
           `💫 الحب الحالي: ${session.answers.newLoveScore || 0}/100\n` +
           `🕰️ الحب السابق: ${session.answers.oldLoveScore || 0}/100\n` +
-          `😊 الإجابة: ${session.answers.happinessDescription || "غير محددة"}\n\n` +
+          `😊 مستوى السعادة: ${happinessText}\n` +
+          `💭 وصفك: ${session.answers.lifeDescription || "غير محدد"}\n\n` +
           `💬 *ملاحظاتنا*\n` +
           `${generateInsights(compatibility.score, session.answers)}\n\n` +
           `✨ *نصيحة أخيرة*\n` +
@@ -384,7 +395,8 @@ export default async function handler(req, res) {
       // معالجة أي نص آخر (ليس جزءاً من الاختبار)
       else if (session.state && session.state !== "welcome") {
         await sendMessage(chatId, 
-          "⚠️ يرجى الإجابة على السؤال الحالي. إذا أردت إلغاء الاختبار، أرسل /start من جديد.",
+          `⚠️ يرجى الإجابة على السؤال الحالي (السؤال ${session.step}/6).\n\n` +
+          `إذا أردت إلغاء الاختبار، أرسل /start من جديد.`,
           token
         );
       }
@@ -425,6 +437,16 @@ async function sendMessage(chatId, text, token, inlineKeyboard = null) {
   } catch (error) {
     console.error("Error sending message:", error);
   }
+}
+
+function getHappinessText(happinessKey) {
+  const happinessMap = {
+    "happy_very": "😄 سعيد جداً",
+    "happy_yes": "🙂 سعيد",
+    "happy_neutral": "😐 محايد",
+    "happy_no": "😔 غير سعيد"
+  };
+  return happinessMap[happinessKey] || "غير محدد";
 }
 
 function generateInsights(score, answers) {
