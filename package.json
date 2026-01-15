@@ -8,6 +8,6 @@
     "start": "node api/bot.js",
     "setup-webhook": "node setup-webhook.js"
   },
-  "dependencies": {},
+  "dependencies": {}
   
 }
