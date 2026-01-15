@@ -1,8 +1,13 @@
 {
-  "name": "telegram-bot",
+  "name": "telegram-gemini-bot",
   "version": "1.0.0",
   "type": "module",
-  "dependencies": {
-  }
-
+  "description": "Telegram Bot with Gemini AI using Webhook",
+  "main": "api/bot.js",
+  "scripts": {
+    "start": "node api/bot.js",
+    "setup-webhook": "node setup-webhook.js"
+  },
+  "dependencies": {},
+  
 }
