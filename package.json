@@ -2,10 +2,6 @@
   "name": "telegram-bot",
   "version": "1.0.0",
   "type": "module",
-  "main": "api/bot.js",
-  "scripts": {
-    "start": "node api/bot.js"
-  },
   "dependencies": {
     "node-fetch": "^3.3.2"
   },
