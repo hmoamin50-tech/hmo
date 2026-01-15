@@ -1,432 +1,205 @@
 const TelegramBot = require('node-telegram-bot-api');
-require('dotenv').config();
+const fetch = require('node-fetch');
 
-// تهيئة البوت مع webhook (الأفضل لـ Vercel)
+// تهيئة البوت
 const bot = new TelegramBot(process.env.BOT_TOKEN);
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-// متغيرات API
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"; // نموذج أسرع
+// تخزين المحادثات (للسياق)
+const conversations = new Map();
 
-// تخزين بيانات المحادثة (استخدم Redis في الإنتاج)
-const userConversations = new Map();
-const userTypingIndicators = new Map();
-
-// دالة للإشارة إلى أن البوت "يكتب..."
-async function showTypingIndicator(chatId, userId) {
-    // إرسال إشارة الكتابة
-    await bot.sendChatAction(chatId, 'typing');
-    
-    // حفظ مؤقت المؤشر
-    const intervalId = setInterval(async () => {
-        try {
-            await bot.sendChatAction(chatId, 'typing');
-        } catch (error) {
-            clearInterval(intervalId);
-        }
-    }, 5000); // إعادة إرسال كل 5 ثواني
-    
-    userTypingIndicators.set(userId, intervalId);
-}
-
-// دالة لإيقاف مؤشر الكتابة
-function stopTypingIndicator(userId) {
-    const intervalId = userTypingIndicators.get(userId);
-    if (intervalId) {
-        clearInterval(intervalId);
-        userTypingIndicators.delete(userId);
-    }
-}
-
-// دالة لإنشاء رسالة تظهر أن البوت يفكر
-async function sendThinkingMessage(chatId) {
-    try {
-        const thinkingMessages = [
-            "🤔 أفكر في إجابتك...",
-            "🔍 أبحث عن أفضل رد...",
-            "💭 أحلل سؤالك...",
-            "⚡ أعالج طلبك..."
-        ];
-        
-        const randomMessage = thinkingMessages[Math.floor(Math.random() * thinkingMessages.length)];
-        const message = await bot.sendMessage(chatId, `⏳ ${randomMessage}`);
-        return message.message_id;
-    } catch (error) {
-        console.log('Could not send thinking message:', error.message);
-        return null;
-    }
-}
-
-// وظيفة إرسال الرسالة إلى Gemini API مع تحسين السرعة
-async function sendMessageToGemini(userId, text) {
-    const startTime = Date.now();
-    
-    // الحصول على تاريخ المحادثة أو إنشاء جديد
-    if (!userConversations.has(userId)) {
-        userConversations.set(userId, {
-            messages: [{
-                role: "user",
-                parts: [{ text: "أنت مساعد مفيد وسريع. أجب بلغة العربية الفصحى، وأجب بإيجاز ووضوح. لا تقدم مقدمة طويلة، ابدأ الإجابة مباشرة." }]
-            }],
-            lastActivity: Date.now()
-        });
-    }
-
-    const conversation = userConversations.get(userId);
-    
-    // إضافة رسالة المستخدم
-    conversation.messages.push({
-        role: "user",
-        parts: [{ text: text }]
-    });
-
-    // تحديث وقت النشاط
-    conversation.lastActivity = Date.now();
-
-    // تنظيف المحادثات القديمة
-    cleanupOldConversations();
-
-    // تحديد معلمات لزيادة السرعة
-    const payload = {
-        contents: conversation.messages.map(msg => ({
-            role: msg.role,
-            parts: msg.parts
-        })),
-        generationConfig: {
-            temperature: 0.7,
-            topK: 1, // لزيادة السرعة
-            topP: 0.95,
-            maxOutputTokens: 1000, // تقليل الطول لزيادة السرعة
-        },
-        safetySettings: [
-            {
-                category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_ONLY_HIGH"
-            }
-        ]
-    };
-
-    try {
-        console.log(`🔍 إرسال طلب إلى Gemini للمستخدم ${userId}...`);
-        
-        // إضافة timeout لطلب API
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 ثانية timeout
-
-        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-            body: JSON.stringify(payload)
-        });
-
-        clearTimeout(timeoutId);
-
-        const data = await response.json();
-        const endTime = Date.now();
-        console.log(`✅ تم استلام الرد من Gemini في ${endTime - startTime}ms`);
-
-        if (!response.ok) {
-            console.error('Gemini API Error:', JSON.stringify(data, null, 2));
-            
-            if (data.error && data.error.message.includes('API key')) {
-                throw new Error('INVALID_API_KEY');
-            }
-            
-            if (data.error && data.error.message.includes('quota')) {
-                throw new Error('QUOTA_EXCEEDED');
-            }
-            
-            throw new Error(data.error?.message || `HTTP Error: ${response.status}`);
-        }
-
-        const botResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
-            ? data.candidates[0].content.parts[0].text
-            : 'عذراً، لم أتلقَ إجابة واضحة. يمكنك إعادة صياغة سؤالك؟';
-
-        // إضافة رد المساعد إلى المحادثة
-        conversation.messages.push({
-            role: "model",
-            parts: [{ text: botResponse }]
-        });
-
-        // تقليل عدد الرسائل للحفاظ على السياق
-        if (conversation.messages.length > 6) {
-            conversation.messages = [
-                conversation.messages[0], // الحفاظ على التعليمات الأولية
-                ...conversation.messages.slice(-5) // الحفاظ على آخر 5 رسائل فقط
-            ];
-        }
-
-        return botResponse;
-
-    } catch (error) {
-        console.error('Error in sendMessageToGemini:', error.message);
-        
-        if (error.name === 'AbortError') {
-            throw new Error('TIMEOUT_ERROR');
-        }
-        
-        throw error;
-    }
-}
-
-// تنظيف المحادثات القديمة
-function cleanupOldConversations() {
-    const now = Date.now();
-    const fifteenMinutes = 15 * 60 * 1000; // 15 دقيقة فقط لتحسين الأداء
-    
-    for (const [userId, conversation] of userConversations.entries()) {
-        if (now - conversation.lastActivity > fifteenMinutes) {
-            userConversations.delete(userId);
-            stopTypingIndicator(userId);
-        }
-    }
-}
-
-// معالجة الويب هوك (لـ Vercel)
+// ⚡ Webhook Handler الرئيسي
 module.exports = async (req, res) => {
-    // رد سريع على طلبات GET لإعلام أن البوت نشط
-    if (req.method === 'GET') {
-        return res.status(200).json({
-            status: 'online',
-            message: '🤖 Telegram Gemini Bot is running on Vercel',
-            timestamp: new Date().toISOString(),
-            activeUsers: userConversations.size
-        });
+  // الرد على طلبات GET
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      status: 'active',
+      users: conversations.size,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // معالجة طلبات POST
+  if (req.method === 'POST') {
+    const message = req.body.message;
+    if (!message?.text) return res.status(200).end();
+
+    const chatId = message.chat.id;
+    const userId = message.from.id;
+    const userText = message.text.trim();
+
+    // معالجة الأوامر الخاصة
+    if (userText.startsWith('/')) {
+      await handleCommand(chatId, userId, userText);
+      return res.status(200).end();
     }
 
-    // معالجة طلبات POST من Telegram
-    if (req.method === 'POST') {
-        try {
-            const { message } = req.body;
-            
-            // تجاهل الرسائل القديمة أو غير المكتملة
-            if (!message || !message.text || !message.chat) {
-                return res.status(200).end();
-            }
+    // معالجة الرسائل العادية
+    await processMessage(chatId, userId, userText);
+    return res.status(200).end();
+  }
 
-            const chatId = message.chat.id;
-            const userId = message.from.id;
-            const messageText = message.text.trim();
-
-            // تجاهل الرسائل الفارغة
-            if (!messageText) {
-                return res.status(200).end();
-            }
-
-            // معالجة الأوامر الخاصة
-            if (messageText.startsWith('/')) {
-                await handleCommand(chatId, userId, messageText);
-                return res.status(200).end();
-            }
-
-            // بدء معالجة الرسالة
-            console.log(`📩 رسالة جديدة من ${userId}: ${messageText.substring(0, 50)}...`);
-            
-            // 1. إظهار مؤشر الكتابة
-            await showTypingIndicator(chatId, userId);
-            
-            // 2. إرسال رسالة "يفكر..."
-            const thinkingMessageId = await sendThinkingMessage(chatId);
-            
-            try {
-                // 3. الحصول على الرد من Gemini
-                const response = await sendMessageToGemini(userId, messageText);
-                
-                // 4. إيقاف مؤشر الكتابة
-                stopTypingIndicator(userId);
-                
-                // 5. حذف رسالة "يفكر..." إذا وجدت
-                if (thinkingMessageId) {
-                    try {
-                        await bot.deleteMessage(chatId, thinkingMessageId);
-                    } catch (deleteError) {
-                        console.log('لم أستطع حذف رسالة التفكير:', deleteError.message);
-                    }
-                }
-                
-                // 6. إرسال الرد النهائي مع تقسيم إذا كان طويلاً
-                await sendLongMessage(chatId, response);
-                
-                console.log(`✅ تم الرد على ${userId} بنجاح`);
-                
-            } catch (error) {
-                // إيقاف مؤشر الكتابة في حالة الخطأ
-                stopTypingIndicator(userId);
-                
-                // حذف رسالة "يفكر..." إذا وجدت
-                if (thinkingMessageId) {
-                    try {
-                        await bot.deleteMessage(chatId, thinkingMessageId);
-                    } catch (deleteError) {
-                        // تجاهل خطأ الحذف
-                    }
-                }
-                
-                // إرسال رسالة خطأ مناسبة
-                await handleError(chatId, error);
-            }
-
-            return res.status(200).end();
-
-        } catch (error) {
-            console.error('❌ خطأ في معالجة الطلب:', error);
-            return res.status(500).json({ error: 'Internal server error' });
-        }
-    }
-
-    return res.status(405).end(); // Method Not Allowed
+  return res.status(405).end();
 };
 
-// دالة معالجة الأوامر
+// 🚀 معالجة الرسائل بسرعة
+async function processMessage(chatId, userId, userText) {
+  try {
+    // إظهار حالة "يكتب..." لمدة قصيرة
+    await bot.sendChatAction(chatId, 'typing');
+    
+    // الحصول على تاريخ المحادثة أو إنشاء جديد
+    if (!conversations.has(userId)) {
+      conversations.set(userId, [
+        { role: 'user', parts: [{ text: 'أنت مساعد سريع ومفيد. أجب بإيجاز وبالعربية.' }] }
+      ]);
+    }
+
+    const userHistory = conversations.get(userId);
+    
+    // إضافة رسالة المستخدم
+    userHistory.push({ role: 'user', parts: [{ text: userText }] });
+
+    // إرسال طلب سريع إلى Gemini
+    const startTime = Date.now();
+    const response = await fetch(
+      `${GEMINI_URL}?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: userHistory.slice(-6), // الحفاظ على آخر 6 رسائل فقط للسرعة
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 800 // تقليل الطول لزيادة السرعة
+          }
+        })
+      }
+    );
+
+    const data = await response.json();
+    const responseTime = Date.now() - startTime;
+    console.log(`⚡ Response time: ${responseTime}ms`);
+
+    // التحقق من الاستجابة
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'API Error');
+    }
+
+    const botReply = data?.candidates?.[0]?.content?.parts?.[0]?.text 
+      || "لم أتمكن من توليد رد. يمكنك إعادة السؤال؟";
+
+    // إضافة رد البوت إلى التاريخ
+    userHistory.push({ role: 'model', parts: [{ text: botReply }] });
+
+    // تقليل التاريخ إذا كان طويلاً
+    if (userHistory.length > 8) {
+      conversations.set(userId, [
+        userHistory[0], // الحفاظ على التعليمات الأولية
+        ...userHistory.slice(-6) // آخر 6 رسائل
+      ]);
+    }
+
+    // إرسال الرد مع مؤشر الأداء إذا كان بطيئاً
+    let finalReply = botReply;
+    if (responseTime > 3000) {
+      finalReply = `⚡ (تمت المعالجة في ${responseTime}ms)\n\n${botReply}`;
+    }
+
+    await bot.sendMessage(chatId, finalReply);
+
+  } catch (error) {
+    console.error('Error:', error.message);
+    
+    // رسائل خطأ ودية
+    let errorMsg = "⚠️ حدث خطأ، حاول مرة أخرى.";
+    
+    if (error.message.includes('API key') || error.message.includes('403')) {
+      errorMsg = "🔑 مشكلة في المفتاح. تأكد من صحة Gemini API Key.";
+    } else if (error.message.includes('timeout') || error.message.includes('network')) {
+      errorMsg = "🌐 مشكلة في الاتصال. يرجى المحاولة مرة أخرى.";
+    } else if (error.message.includes('quota')) {
+      errorMsg = "💰 تجاوزت الحصة اليومية لـ Gemini API.";
+    }
+    
+    await bot.sendMessage(chatId, errorMsg);
+  }
+}
+
+// 🎯 معالجة الأوامر
 async function handleCommand(chatId, userId, command) {
-    switch (command) {
-        case '/start':
-            const welcomeMessage = `🎉 **أهلاً بك في بوت Gemini الذكي!**\n\n`
-                + `أنا مساعد ذكي يمكنني:\n`
-                + `• الإجابة على أسئلتك 📚\n`
-                + `• المساعدة في الكتابة والتلخيص ✍️\n`
-                + `• الترجمة بين اللغات 🌐\n`
-                + `• حل المسائل الرياضية والمنطقية 🧮\n\n`
-                + `**سرعة الرد:** ⚡\n`
-                + `(قد يستغرق أول رد 5-10 ثواني بسبب البداية الباردة على Vercel)\n\n`
-                + `📝 **أرسل رسالتك الآن!**`;
-            
-            await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-            break;
-            
-        case '/help':
-            const helpMessage = `🆘 **الأوامر المتاحة:**\n\n`
-                + `/start - بدء البوت\n`
-                + `/help - المساعدة\n`
-                + `/clear - مسح الذاكرة\n`
-                + `/ping - فحص سرعة البوت\n`
-                + `/stats - إحصائيات\n\n`
-                + `**نصائح:**\n`
-                + `• اكتب أسئلة واضحة\n`
-                + `• أول رسالة قد تكون أبطأ قليلاً\n`
-                + `• البوت يحفظ سياق المحادثة\n`
-                + `• يمكنك إعادة صياغة السؤال إذا كان الرد بطيئاً`;
-            
-            await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-            break;
-            
-        case '/clear':
-            userConversations.delete(userId);
-            stopTypingIndicator(userId);
-            await bot.sendMessage(chatId, '🧹 تم مسح ذاكرة المحادثة. يمكنك البدء من جديد!');
-            break;
-            
-        case '/ping':
-            const start = Date.now();
-            const pingMessage = await bot.sendMessage(chatId, '🏓 جاري فحص البينج...');
-            const end = Date.now();
-            await bot.editMessageText(
-                `🏓 **Pong!**\n`
-                + `• وقت الاستجابة: ${end - start}ms\n`
-                + `• المستخدمين النشطين: ${userConversations.size}\n`
-                + `• حالة Vercel: ${process.env.VERCEL ? 'نشط' : 'محلي'}`,
-                {
-                    chat_id: chatId,
-                    message_id: pingMessage.message_id,
-                    parse_mode: 'Markdown'
-                }
-            );
-            break;
-            
-        case '/stats':
-            const statsMessage = `📊 **إحصائيات البوت:**\n\n`
-                + `• المستخدمين النشطين: ${userConversations.size}\n`
-                + `• البوت يعمل على: Vercel\n`
-                + `• النموذج: Gemini 1.5 Flash\n`
-                + `• وقت التحديث: ${new Date().toLocaleTimeString('ar-SA')}\n\n`
-                + `💡 **لتحسين السرعة:**\n`
-                + `إذا كان البوت بطيئاً، جرب:\n`
-                + `1. استخدام /clear\n`
-                + `2. صياغة السؤال بطريقة أوضح\n`
-                + `3. الانتظار 5-10 ثواني للرد الأول`;
-            
-            await bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
-            break;
-            
-        default:
-            await bot.sendMessage(chatId, '⚠️ الأمر غير معروف. استخدم /help لرؤية الأوامر المتاحة.');
-    }
+  switch (command) {
+    case '/start':
+      const welcome = `🚀 **أهلاً بك!**\n\n`
+        + `أنا بوت Gemini السريع ⚡\n`
+        + `• أرد خلال ثوانٍ\n`
+        + `• أتذكر محادثتنا\n`
+        + `• أتحدث العربية بطلاقة\n\n`
+        + `📝 اكتب سؤالك الآن!`;
+      await bot.sendMessage(chatId, welcome, { parse_mode: 'Markdown' });
+      break;
+
+    case '/help':
+      const help = `🆘 **الأوامر:**\n`
+        + `/start - بدء البوت\n`
+        + `/help - هذه الرسالة\n`
+        + `/clear - مسح الذاكرة\n`
+        + `/speed - فحص السرعة\n`
+        + `/stats - إحصائيات\n\n`
+        + `💡 **نصائح للسرعة:**\n`
+        + `• اكتب بوضوح\n`
+        + `• استخدم جمل قصيرة\n`
+        + `• أول رد قد يكون أبطأ قليلاً`;
+      await bot.sendMessage(chatId, help, { parse_mode: 'Markdown' });
+      break;
+
+    case '/clear':
+      conversations.delete(userId);
+      await bot.sendMessage(chatId, '🧹 تم مسح ذاكرة المحادثة!');
+      break;
+
+    case '/speed':
+      const start = Date.now();
+      const pingMsg = await bot.sendMessage(chatId, '🏓 فحص السرعة...');
+      const end = Date.now();
+      const speedMsg = `⚡ **الأداء:**\n`
+        + `• وقت الاستجابة: ${end - start}ms\n`
+        + `• المستخدمين النشطين: ${conversations.size}\n`
+        + `• الحالة: ${end - start < 1000 ? 'سريع 🚀' : 'عادي ⏱️'}`;
+      await bot.editMessageText(speedMsg, {
+        chat_id: chatId,
+        message_id: pingMsg.message_id,
+        parse_mode: 'Markdown'
+      });
+      break;
+
+    case '/stats':
+      const stats = `📊 **إحصائيات:**\n`
+        + `• المستخدمين النشطين: ${conversations.size}\n`
+        + `• مشغل على: Vercel\n`
+        + `• النموذج: Gemini 2.5 Flash\n`
+        + `• الوقت: ${new Date().toLocaleTimeString('ar-SA')}\n\n`
+        + `⚡ **مصمم للسرعة**`;
+      await bot.sendMessage(chatId, stats, { parse_mode: 'Markdown' });
+      break;
+
+    case '/ping':
+      await bot.sendMessage(chatId, '🏓 Pong! البوت يعمل بنجاح ✅');
+      break;
+
+    default:
+      await bot.sendMessage(chatId, '⚠️ أمر غير معروف. جرب /help');
+  }
 }
 
-// دالة إرسال الرسائل الطويلة بتقسيمها
-async function sendLongMessage(chatId, text, maxLength = 4000) {
-    if (text.length <= maxLength) {
-        return await bot.sendMessage(chatId, text);
+// 🧹 تنظيف المحادثات القديمة (كل ساعة)
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, conversation] of conversations.entries()) {
+    // افترض أن كل محادثة تحتوي على timestamp
+    if (conversation.lastActive && now - conversation.lastActive > 3600000) {
+      conversations.delete(userId);
     }
-    
-    // تقسيم النص إلى أجزاء
-    const parts = [];
-    let currentPart = '';
-    
-    const sentences = text.split(/(?<=[.!؟])\s+/);
-    
-    for (const sentence of sentences) {
-        if ((currentPart + sentence).length > maxLength) {
-            if (currentPart) parts.push(currentPart.trim());
-            currentPart = sentence;
-        } else {
-            currentPart += ' ' + sentence;
-        }
-    }
-    
-    if (currentPart.trim()) {
-        parts.push(currentPart.trim());
-    }
-    
-    // إرسال الأجزاء
-    for (let i = 0; i < parts.length; i++) {
-        await bot.sendMessage(chatId, `${parts[i]} ${i < parts.length - 1 ? '...' : ''}`);
-        await new Promise(resolve => setTimeout(resolve, 300)); // فاصل بين الرسائل
-    }
-}
-
-// دالة معالجة الأخطاء
-async function handleError(chatId, error) {
-    let errorMessage;
-    
-    switch (error.message) {
-        case 'TIMEOUT_ERROR':
-            errorMessage = '⏳ **تجاوز الوقت المحدد**\n\n'
-                + 'الطلب استغرق وقتاً طويلاً. هذا يحدث أحياناً بسبب:\n'
-                + '• بداية باردة على Vercel\n'
-                + '• سؤال معقد جداً\n'
-                + '• ازدحام في شبكة Gemini\n\n'
-                + '💡 حاول:\n'
-                + '1. إعادة إرسال السؤال\n'
-                + '2. تقسيم السؤال إلى أجزاء\n'
-                + '3. الانتظار قليلاً ثم المحاولة';
-            break;
-            
-        case 'INVALID_API_KEY':
-            errorMessage = '🔑 **مشكلة في المفتاح**\n'
-                + 'مفتاح Gemini API غير صالح.';
-            break;
-            
-        case 'QUOTA_EXCEEDED':
-            errorMessage = '💰 **تجاوز الحصة**\n'
-                + 'تم تجاوز الحصة اليومية لـ Gemini API.';
-            break;
-            
-        default:
-            errorMessage = '❌ **حدث خطأ غير متوقع**\n'
-                + 'يرجى المحاولة مرة أخرى.\n'
-                + `التفاصيل: ${error.message.substring(0, 100)}`;
-    }
-    
-    await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
-}
-
-// تهيئة ويب هوك عند بدء التشغيل (للتشغيل المحلي)
-if (process.env.NODE_ENV !== 'production') {
-    bot.startPolling();
-    console.log('🤖 البوت يعمل في وضع الاستطلاع المحلي...');
-}
+  }
+  console.log(`🧹 Cleaned old conversations. Active: ${conversations.size}`);
+}, 3600000); // كل ساعة
