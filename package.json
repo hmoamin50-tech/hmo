@@ -9,5 +9,4 @@
     "setup-webhook": "node setup-webhook.js"
   },
   "dependencies": {}
-  
 }
