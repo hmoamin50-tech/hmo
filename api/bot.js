@@ -1,27 +1,32 @@
 const TelegramBot = require('node-telegram-bot-api');
 
-// تهيئة بوت تلجرام
+// تهيئة بوت تلجرام باستخدام التوكن المخزن في إعدادات Vercel
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// الرابط الذي أثبت نجاحه في اختبارك
+// الرابط المباشر لـ Gemini API (النسخة المستقرة)
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 export default async function handler(req, res) {
+    // استقبال طلبات POST فقط من تلجرام
     if (req.method !== 'POST') {
-        return res.status(200).send('Bot is Running...');
+        return res.status(200).send('البوت يعمل بنجاح! ✅');
     }
 
     const { message } = req.body;
-    if (!message || !message.text) return res.status(200).end();
+
+    // إذا لم تكن هناك رسالة نصية، إنهاء الطلب
+    if (!message || !message.text) {
+        return res.status(200).end();
+    }
 
     const chatId = message.chat.id;
     const userText = message.text;
 
     try {
-        // إظهار حالة "جاري الكتابة"
+        // 1. إظهار حالة "جاري الكتابة" في تلجرام
         await bot.sendChatAction(chatId, 'typing');
 
-        // الاتصال بـ Gemini باستخدام fetch (نفس طريقتك الناجحة)
+        // 2. إرسال الطلب إلى Gemini باستخدام Fetch (نفس طريقتك الناجحة)
         const response = await fetch(`${GEMINI_API_URL}?key=${process.env.GEMINI_API_KEY}`, {
             method: 'POST',
             headers: {
@@ -36,21 +41,24 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
+        // التأكد من نجاح الاستجابة من جوجل
         if (!response.ok) {
-            throw new Error(data.error?.message || 'Gemini API Error');
+            throw new Error(data.error?.message || 'خطأ في الاتصال بـ Gemini');
         }
 
-        // استخراج النص من رد Gemini
+        // 3. استخراج الرد النصي
         const botResponse = data.candidates?.[0]?.content?.parts?.[0]?.text 
-                           || "عذراً، لم أستطع فهم ذلك.";
+                           || "🤖 عذراً، لم أستطع فهم الرسالة.";
 
-        // إرسال الرد للمستخدم على تلجرام
+        // 4. إرسال الرد النهائي للمستخدم على تلجرام
         await bot.sendMessage(chatId, botResponse);
 
     } catch (error) {
-        console.error('Error:', error);
-        await bot.sendMessage(chatId, `⚠️ حدث خطأ في الاتصال بـ AI: ${error.message}`);
+        console.error('Error Trace:', error);
+        // إرسال رسالة خطأ واضحة في حال فشل أي جزء
+        await bot.sendMessage(chatId, `⚠️ عذراً، حدث خطأ تقني: ${error.message}`);
     }
 
+    // إغلاق الطلب بنجاح (ضروري جداً لـ Vercel وتلجرام)
     res.status(200).end();
 }
