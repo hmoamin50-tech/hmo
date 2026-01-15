@@ -1,29 +1,29 @@
 export default async function handler(req, res) {
     const token = process.env.BOT_TOKEN;
 
-    // التأكد أن الطلب قادم من تليجرام (POST)
     if (req.method === "POST") {
         const update = req.body;
 
-        if (update.message) {
+        // إذا كانت هناك رسالة نصية
+        if (update.message?.text) {
             const chatId = update.message.chat.id;
-            const text = update.message.text;
+            const userText = update.message.text;
 
-            // إرسال رد بنفس النص
-            const telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-            
-            await fetch(telegramUrl, {
+            let replyText = "هلا"; // الرد الافتراضي
+
+            // إرسال الرد باستخدام fetch المدمج في Node.js
+            await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     chat_id: chatId,
-                    text: `وصلت رسالتك: ${text}`
+                    text: replyText
                 })
             });
         }
         return res.status(200).send("ok");
     }
 
-    // إذا فتحت الرابط في المتصفح يظهر هذا النص
-    res.status(200).send("البوت يعمل وينتظر رسائل تليجرام...");
+    // رسالة التأكد عند فتح الرابط في المتصفح
+    res.status(200).send("البوت جاهز للاستخدام...");
 }
