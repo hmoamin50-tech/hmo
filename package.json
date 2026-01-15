@@ -8,8 +8,10 @@
     "start": "node api/bot.js",
     "dev": "node --watch api/bot.js"
   },
-  "dependencies": {},
-   "engines": { 
-     "node": ">=18.0.0" 
-   } 
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
