@@ -1,4 +1,13 @@
-"dependencies": {
-  "@google/generative-ai": "^0.1.0",
-  "node-telegram-bot-api": "^0.64.0"
+{
+  "name": "telegram-love-bot",
+  "version": "1.0.0",
+  "description": "بوت لعبة المشاعر الجميلة للتليجرام",
+  "main": "api/bot.js",
+  "scripts": {
+    "start": "node api/bot.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": "18.x"
+  }
 }
