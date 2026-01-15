@@ -2,11 +2,9 @@
   "name": "telegram-bot",
   "version": "1.0.0",
   "type": "module",
-  "description": "Telegram bot for Vercel",
   "main": "api/bot.js",
   "scripts": {
-    "start": "node api/bot.js",
-    "dev": "node --watch api/bot.js"
+    "start": "node api/bot.js"
   },
   "dependencies": {
     "node-fetch": "^3.3.2"
