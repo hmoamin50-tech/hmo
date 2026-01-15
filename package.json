@@ -1,13 +1,12 @@
 {
-  "name": "emotion-game-bot",
-  "version": "2.0.0",
+  "name": "telegram-bot",
+  "version": "1.0.0",
   "type": "module",
-  "description": "لعبة المشاعر الجميلة مع ذكاء محدود",
+  "description": "Telegram bot for Vercel",
   "main": "api/bot.js",
   "scripts": {
     "start": "node api/bot.js",
     "dev": "node --watch api/bot.js"
   },
-  "dependencies": {},
-  
+  "dependencies": {}
 }
