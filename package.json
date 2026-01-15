@@ -1,8 +1,15 @@
 {
-  "name": "gemini-telegram-bot",
-  "version": "1.0.0",
-  "main": "api/webhook.js",
-  "dependencies": {
-    "node-telegram-bot-api": "^0.64.0"
+  "name": "emotion-game-bot",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "لعبة المشاعر الجميلة مع ذكاء محدود",
+  "main": "api/bot.js",
+  "scripts": {
+    "start": "node api/bot.js",
+    "dev": "node --watch api/bot.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
