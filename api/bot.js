@@ -1,61 +1,56 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const TelegramBot = require('node-telegram-bot-api');
 
-// تهيئة API Gemini مع تحديد الإصدار لحل مشكلة الـ 404
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// تهيئة بوت تلجرام
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// تعيين النموذج مع إعدادات توافق إضافية
-const model = genAI.getGenerativeModel({ 
-  model: "gemini-1.5-flash" 
-}, { apiVersion: 'v1beta' }); 
+// الرابط الذي أثبت نجاحه في اختبارك
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 export default async function handler(req, res) {
-  // استقبال طلبات تلجرام فقط
-  if (req.method !== 'POST') {
-    return res.status(200).send('Bot Status: Active ✅');
-  }
-
-  const { message } = req.body;
-
-  // إذا لم تكن هناك رسالة نصية، تجاهل الطلب
-  if (!message || !message.text) {
-    return res.status(200).end();
-  }
-
-  const chatId = message.chat.id;
-  const userText = message.text;
-
-  try {
-    // إظهار أن البوت يكتب الآن
-    await bot.sendChatAction(chatId, 'typing');
-
-    // منطق البدء
-    if (userText === '/start') {
-      await bot.sendMessage(chatId, "🌸 أهلاً بك! أنا الآن متصل بذكاء Gemini. أرسل أي شيء وسأرد عليك.");
-      return res.status(200).end();
+    if (req.method !== 'POST') {
+        return res.status(200).send('Bot is Running...');
     }
 
-    // إرسال النص لـ Gemini للحصول على رد
-    const prompt = `رد بجملة واحدة بسيطة كصديق على: "${userText}"`;
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const aiText = response.text();
+    const { message } = req.body;
+    if (!message || !message.text) return res.status(200).end();
 
-    // إرسال رد الذكاء الاصطناعي للمستخدم
-    await bot.sendMessage(chatId, `🤖 ${aiText}`);
+    const chatId = message.chat.id;
+    const userText = message.text;
 
-  } catch (error) {
-    console.error('Error Details:', error);
-    
-    // رد مخصص في حال فشل الـ AI لتعرف السبب
-    let errorMessage = "⚠️ واجهت مشكلة في الاتصال بذكائي.";
-    if (error.message.includes('404')) errorMessage = "⚠️ خطأ: النموذج غير متاح في منطقتك حالياً.";
-    if (error.message.includes('API key')) errorMessage = "⚠️ خطأ: مفتاح API غير صحيح أو غير مفعل.";
-    
-    await bot.sendMessage(chatId, errorMessage);
-  }
+    try {
+        // إظهار حالة "جاري الكتابة"
+        await bot.sendChatAction(chatId, 'typing');
 
-  // إنهاء الطلب بنجاح لـ Vercel
-  res.status(200).end();
+        // الاتصال بـ Gemini باستخدام fetch (نفس طريقتك الناجحة)
+        const response = await fetch(`${GEMINI_API_URL}?key=${process.env.GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: userText }]
+                }]
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error?.message || 'Gemini API Error');
+        }
+
+        // استخراج النص من رد Gemini
+        const botResponse = data.candidates?.[0]?.content?.parts?.[0]?.text 
+                           || "عذراً، لم أستطع فهم ذلك.";
+
+        // إرسال الرد للمستخدم على تلجرام
+        await bot.sendMessage(chatId, botResponse);
+
+    } catch (error) {
+        console.error('Error:', error);
+        await bot.sendMessage(chatId, `⚠️ حدث خطأ في الاتصال بـ AI: ${error.message}`);
+    }
+
+    res.status(200).end();
 }
