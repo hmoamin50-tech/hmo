@@ -1,185 +1,97 @@
-// api/bot.js - النسخة المحدثة
+// api/bot.js - النسخة المصححة الكاملة
 import fetch from 'node-fetch';
 
-console.log('🚀 بدء تشغيل بوت Gemini...');
+console.log('🚀 بدء تشغيل بوت التوافق العاطفي...');
 
-// ===== متغيرات البيئة =====
+// ===== استخدم نفس المفتاح الذي يعمل في صفحة الويب =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyC6J7E8sx2RfXZLc_ybffvFp7FP2htfP-M"; // استخدم مفتاحك مباشرة
 
-// ===== اختبار الاتصال عند البدء =====
-(async () => {
-  console.log('🔍 اختبار اتصال Gemini...');
-  
-  if (!GEMINI_API_KEY) {
-    console.log('⚠️ GEMINI_API_KEY غير موجود - سيستخدم الردود المحلية');
-  } else {
-    console.log('✅ GEMINI_API_KEY موجود');
-    
-    // اختبار بسيط للاتصال
-    try {
-      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-      
-      const response = await fetch(testUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: "user",
-            parts: [{ text: "مرحباً" }]
-          }],
-          generationConfig: {
-            maxOutputTokens: 100
-          }
-        })
-      });
-      
-      if (response.ok) {
-        console.log('🎉 Gemini API يعمل بشكل صحيح!');
-      } else {
-        const error = await response.json();
-        console.error('❌ Gemini API error:', error.error?.message);
-      }
-    } catch (error) {
-      console.error('❌ فشل اختبار Gemini:', error.message);
-    }
-  }
-})();
+// ===== استخدم نفس الـ API URL الذي يعمل في صفحة الويب =====
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-// ===== ردود محلية بديلة =====
-const localResponses = {
-  "default": [
-    "مرحباً! كيف يمكنني مساعدتك اليوم؟ 😊",
-    "أهلاً وسهلاً! أنا هنا للإجابة على أسئلتك 🌟",
-    "شكراً لتواصلك! ما الذي تريد معرفته؟ 💭",
-    "أنا مساعدك الذكي، اسألني عن أي شيء! 🤖",
-    "سعيد بتواصلك! كيف يمكنني خدمتك؟ ✨"
-  ],
-  "greeting": [
-    "مرحباً! يومك سعيد 🌞",
-    "أهلاً بك! كيف حالك اليوم؟ 😊",
-    "مرحباً! سعيد برؤيتك 🌷",
-    "أهلاً وسهلاً! كيف يمكنني مساعدتك؟ 🌟"
-  ],
-  "thanks": [
-    "العفو! سعيد بمساعدتك 🌸",
-    "لا شكر على واجب! 💖",
-    "شكراً لك! أنت رائع 🌈",
-    "العفو! دائمًا هنا لمساعدتك ✨"
-  ],
-  "help": [
-    "يمكنني مساعدتك في:\n• الإجابة على الأسئلة\n• الكتابة والترجمة\n• النصائح والإرشادات\n• المحادثة العامة",
-    "أنا هنا ل:\n• الإجابة على استفساراتك\n• المساعدة في المهام\n• تقديم المعلومات\n• التحدث معك"
-  ],
-  "love": [
-    "الحب هو أجمل شعور في الحياة 💖",
-    "المشاعر الجميلة تجعل الحياة أجمل 🌷",
-    "الحب يحتاج إلى صبر ورعاية 🌱",
-    "كل قلب يستحق الحب والاهتمام 💫"
-  ]
-};
+console.log(`🔑 GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅ موجود' : '❌ غير موجود'}`);
+console.log(`🔗 Gemini Model: gemini-2.5-flash`);
 
-// ===== دالة Gemini مع Fallback =====
-async function getAIResponse(userId, userMessage) {
-  // إذا لم يكن هناك مفتاح Gemini، استخدم الردود المحلية
-  if (!GEMINI_API_KEY) {
-    console.log('🔧 استخدام الردود المحلية (Gemini غير متوفر)');
-    return getLocalResponse(userMessage);
-  }
-  
+// ===== دالة Gemini المصححة =====
+async function getGeminiResponse(userMessage) {
   try {
-    console.log('🤖 محاولة الاتصال بـ Gemini...');
+    console.log('🤖 جاري التواصل مع Gemini API...');
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // نفس الـ payload الذي يعمل في صفحة الويب
+    const payload = {
+      contents: [{
+        parts: [{ text: userMessage }]
+      }]
+    };
     
-    // نظام Prompt محسن
-    const prompt = `أنت مساعد ذكي في بوت تلجرام يسمى "مكتب التوافق العاطفي".
-    المستخدم يقول: "${userMessage}"
+    console.log('📤 إرسال الرسالة إلى Gemini:', userMessage.substring(0, 50));
     
-    أجب باللغة العربية بشكل:
-    1. مختصر وواضح (2-3 جمل كحد أقصى)
-    2. ودود ولبق
-    3. إيجابي ومشجع
-    4. مع إضافة إيموجي مناسب واحد فقط
-    
-    لا تقدم تحليلات طويلة، كن مباشراً.`;
-    
-    const response = await fetch(url, {
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.8,
-          topK: 40,
-          maxOutputTokens: 150
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
-          }
-        ]
-      })
+      headers: { 
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
     });
     
+    console.log('📡 حالة الرد من Gemini:', response.status);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('❌ Gemini API error:', errorData);
-      throw new Error(`API Error: ${errorData.error?.message || response.status}`);
+      const errorText = await response.text();
+      console.error('❌ خطأ من Gemini API:', errorText);
+      
+      // تحليل الخطأ
+      if (response.status === 404) {
+        throw new Error('النموذج غير موجود. جرب gemini-1.5-flash');
+      } else if (response.status === 403) {
+        throw new Error('مفتاح API غير صالح أو غير مصرح به');
+      } else {
+        throw new Error(`خطأ ${response.status}: ${errorText.substring(0, 100)}`);
+      }
     }
     
     const data = await response.json();
+    console.log('✅ تم استلام رد من Gemini بنجاح');
+    
     const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!aiResponse) {
-      throw new Error('No response from Gemini');
+      console.log('⚠️ Gemini لم يرجع نصاً:', data);
+      throw new Error('لم يتم استلام رد نصي من Gemini');
     }
     
-    console.log('✅ تم الحصول على رد من Gemini');
     return aiResponse.trim();
     
   } catch (error) {
-    console.error('❌ خطأ في Gemini، استخدام الرد المحلي:', error.message);
-    return getLocalResponse(userMessage);
+    console.error('🔥 خطأ في الاتصال بـ Gemini:', error.message);
+    
+    // ردود ذكية بديلة تناسب بوت التوافق العاطفي
+    const lowerMessage = userMessage.toLowerCase();
+    
+    if (lowerMessage.includes('نوم') || lowerMessage.includes('ينام') || lowerMessage.includes('سهر')) {
+      return "لتنظيم النوم: حاول إنشاء روتين مسائي ثابت، ابتعد عن الشاشات قبل النوم بساعة، واجعل غرفتك مظلمة وهادئة. 🌙 جرب قراءة كتاب أو الاستماع لموسيقى هادئة.";
+    }
+    
+    if (lowerMessage.includes('قلق') || lowerMessage.includes('توتر') || lowerMessage.includes('خوف')) {
+      return "للتعامل مع القلق: خذ نفساً عميقاً، ركز على الحاضر، تحدث عما تشعر به. 🧘‍♂️ يمكنك أيضاً ممارسة الرياضة أو الكتابة عن مشاعرك.";
+    }
+    
+    if (lowerMessage.includes('حب') || lowerMessage.includes('علاقة') || lowerMessage.includes('مشاعر')) {
+      return "العلاقات الناجحة تحتاج للتواصل الصادق، التفهم المتبادل، والاحترام. 💖 تذكر أن كل علاقة فريدة وتحتاج وقتاً وصبراً.";
+    }
+    
+    if (lowerMessage.includes('مرحبا') || lowerMessage.includes('اهلا') || lowerMessage.includes('السلام')) {
+      return "مرحباً بك! 😊 أنا مساعدك في مختبر التوافق العاطفي. كيف يمكنني مساعدتك اليوم؟";
+    }
+    
+    // رد افتراضي ذكي
+    return "شكراً لسؤالك! 🤔 أنا هنا لمساعدتك في الأمور العاطفية والنفسية. هل يمكنك شرح سؤالك أكثر؟";
   }
 }
 
-// ===== دالة الردود المحلية =====
-function getLocalResponse(message) {
-  const lowerMessage = message.toLowerCase();
-  
-  // التحقق من نوع الرسالة
-  if (lowerMessage.includes('مرحبا') || lowerMessage.includes('اهلا') || lowerMessage.includes('السلام')) {
-    return localResponses.greeting[Math.floor(Math.random() * localResponses.greeting.length)];
-  }
-  
-  if (lowerMessage.includes('شكر') || lowerMessage.includes('ممتاز') || lowerMessage.includes('رائع')) {
-    return localResponses.thanks[Math.floor(Math.random() * localResponses.thanks.length)];
-  }
-  
-  if (lowerMessage.includes('حب') || lowerMessage.includes('عشق') || lowerMessage.includes('مشاعر')) {
-    return localResponses.love[Math.floor(Math.random() * localResponses.love.length)];
-  }
-  
-  if (lowerMessage.includes('مساعدة') || lowerMessage.includes('help') || lowerMessage.includes('ماذا تفعل')) {
-    return localResponses.help[Math.floor(Math.random() * localResponses.help.length)];
-  }
-  
-  // رد افتراضي
-  return localResponses.default[Math.floor(Math.random() * localResponses.default.length)];
-}
-
-// ===== دالة إرسال رسالة تلجرام =====
-async function sendTelegram(chatId, text, options = {}) {
+// ===== دالة إرسال رسائل Telegram =====
+async function sendTelegramMessage(chatId, text, options = {}) {
   try {
     const payload = {
       chat_id: chatId,
@@ -198,160 +110,202 @@ async function sendTelegram(chatId, text, options = {}) {
     const result = await response.json();
     
     if (!result.ok) {
-      console.error('❌ Telegram error:', result);
+      console.error('❌ خطأ من Telegram:', result.description);
     }
     
     return result;
   } catch (error) {
-    console.error('🔥 Telegram send error:', error);
+    console.error('🔥 خطأ في إرسال رسالة Telegram:', error);
     throw error;
   }
 }
 
-// ===== Webhook Handler =====
+// ===== دالة إرسال حالة الكتابة =====
+async function sendTypingAction(chatId) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendChatAction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        action: "typing"
+      })
+    });
+  } catch (error) {
+    console.error('❌ خطأ في إرسال حالة الكتابة:', error);
+  }
+}
+
+// ===== Webhook Handler الرئيسي =====
 export default async function handler(req, res) {
-  console.log('📥 طلب:', req.method);
+  console.log('\n=== 📥 طلب جديد ===');
+  console.log('⏰ الوقت:', new Date().toLocaleString('ar-EG'));
+  console.log('📝 Method:', req.method);
   
-  // GET للتحقق
+  // الرد على طلبات GET للتحقق
   if (req.method === 'GET') {
-    const geminiStatus = GEMINI_API_KEY ? '✅ متوفر' : '❌ غير متوفر';
-    
     return res.status(200).json({
       status: "✅ نشط",
-      service: "مكتب التوافق العاطفي",
-      gemini: geminiStatus,
-      time: new Date().toLocaleString('ar-EG'),
-      note: "أرسل /debug في تلجرام لمعلومات أكثر"
+      service: "مختبر التوافق العاطفي",
+      gemini_api: GEMINI_API_KEY ? "✅ مضبوط" : "❌ غير مضبوط",
+      telegram_bot: BOT_TOKEN ? "✅ متصل" : "❌ غير متصل",
+      model: "gemini-2.5-flash",
+      time: new Date().toISOString(),
+      endpoint: "/api/bot"
     });
   }
   
-  // POST من Telegram
+  // معالجة طلبات POST من Telegram
   if (req.method === 'POST') {
+    // التحقق من وجود BOT_TOKEN
     if (!BOT_TOKEN) {
-      return res.status(500).json({ error: "BOT_TOKEN غير موجود" });
+      console.error('❌ BOT_TOKEN غير موجود في environment variables');
+      return res.status(500).json({ 
+        error: "BOT_TOKEN مطلوب. أضفه في Vercel Environment Variables." 
+      });
     }
     
     const update = req.body;
     
-    // ===== أمر /debug (للإدمن) =====
-    if (update.message?.text === '/debug') {
-      const chatId = update.message.chat.id;
-      
-      let geminiTest = "❌ لم يتم الاختبار";
-      if (GEMINI_API_KEY) {
-        try {
-          const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-          const testRes = await fetch(testUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: "test" }] }]
-            })
-          });
-          geminiTest = testRes.ok ? "✅ يعمل" : `❌ خطأ: ${testRes.status}`;
-        } catch (e) {
-          geminiTest = `❌ خطأ: ${e.message}`;
-        }
-      }
-      
-      const debugInfo = `🔍 *معلومات التصحيح*\n\n` +
-        `🤖 *البوت:* نشط ✅\n` +
-        `🔑 *BOT_TOKEN:* ${BOT_TOKEN ? '✅ موجود' : '❌ غير موجود'}\n` +
-        `🤖 *Gemini API Key:* ${GEMINI_API_KEY ? '✅ موجود' : '❌ غير موجود'}\n` +
-        `🔄 *Gemini Status:* ${geminiTest}\n` +
-        `🌐 *البيئة:* ${process.env.NODE_ENV || 'production'}\n` +
-        `⏰ *الوقت:* ${new Date().toLocaleString('ar-EG')}\n\n` +
-        `📊 *ملاحظة:*\n` +
-        `إذا كان Gemini غير متوفر،\n` +
-        `سيستخدم البوت الردود المحلية.`;
-      
-      await sendTelegram(chatId, debugInfo);
+    // إذا لم يكن هناك رسالة، ننهي الطلب
+    if (!update.message && !update.callback_query) {
       return res.status(200).json({ ok: true });
     }
     
-    // ===== أمر /start =====
+    // ===== معالجة أمر /start =====
     if (update.message?.text === '/start') {
       const chatId = update.message.chat.id;
       const userName = update.message.from.first_name;
       
-      const welcome = `🎉 *أهلاً ${userName}!* 😊\n\n` +
-        `*أنا مساعدك الذكي* 🤖\n\n` +
-        `✨ *يمكنني:*\n` +
-        `• الإجابة على أسئلتك 💭\n` +
-        `• المساعدة في الكتابة ✍️\n` +
-        `• الترجمة بين اللغات 🌐\n` +
-        `• النصائح والإرشادات 💡\n\n` +
-        `📝 *الأوامر:*\n` +
-        `/start - بدء البوت\n` +
-        `/help - المساعدة\n` +
-        `/clear - مسح الذاكرة\n` +
-        `/info - معلومات\n\n` +
-        `💬 *اكتب سؤالك الآن!* ⚡`;
+      console.log(`🚀 ${userName} بدأ البوت (${chatId})`);
       
-      await sendTelegram(chatId, welcome);
+      const welcomeMessage = `🎉 *أهلاً ${userName}!* 😊\n\n` +
+        `*مرحباً بك في مختبر التوافق العاطفي* 🤖\n\n` +
+        `✨ *أنا مساعدك الذكي للاستشارات النفسية والعاطفية* 💖\n\n` +
+        `🔍 *كيف يمكنني مساعدتك:*\n` +
+        `• استشارات عاطفية ونفسية 🌷\n` +
+        `• نصائح للعلاقات والزواج 💑\n` +
+        `• حلول للمشاكل الاجتماعية 🤝\n` +
+        `• إرشادات للصحة النفسية 🧠\n\n` +
+        `💬 *يمكنك سؤالي عن:*\n` +
+        `• "كيف أتعامل مع القلق؟"\n` +
+        `• "نصائح لعلاقة ناجحة"\n` +
+        `• "كيف أنظم نومي؟"\n` +
+        `• "أشعر بالحزن، ماذا أفعل؟"\n\n` +
+        `📝 *الأوامر المتاحة:*\n` +
+        `/start - إعادة الترحيب\n` +
+        `/help - المساعدة\n` +
+        `/test - اختبار Gemini\n\n` +
+        `💡 *اكتب لي ما يدور في خاطرك الآن...* 🌟`;
+      
+      await sendTelegramMessage(chatId, welcomeMessage);
       return res.status(200).json({ ok: true });
     }
     
-    // ===== أمر /info =====
-    if (update.message?.text === '/info') {
+    // ===== معالجة أمر /help =====
+    if (update.message?.text === '/help') {
       const chatId = update.message.chat.id;
-      const geminiStatus = GEMINI_API_KEY ? '✅ نشط' : '⚠️ غير نشط (يستخدم ردود محلية)';
       
-      const info = `🤖 *معلومات المكتب*\n\n` +
-        `*الاسم:* مكتب التوافق العاطفي\n` +
-        `*الذكاء:* ${geminiStatus}\n` +
-        `*النموذج:* Gemini 1.5 Flash\n` +
-        `*اللغة:* العربية الفصحى\n\n` +
-        `📊 *مميزات:*\n` +
-        `• ردود سريعة ومباشرة ⚡\n` +
-        `• محادثة ودودة 😊\n` +
-        `• يدعم مواضيع متنوعة 💭\n` +
-        `• مجاني بالكامل 🌟`;
+      const helpMessage = `🆘 *مساعدة*\n\n` +
+        `*كيفية استخدام البوت:*\n` +
+        `1. اكتب رسالتك مباشرة\n` +
+        `2. انتظر قليلاً للحصول على الرد\n` +
+        `3. يمكنك طرح أي سؤال عاطفي أو نفسي\n\n` +
+        `*نصائح للاستخدام الأمثل:*\n` +
+        `• كن واضحاً في سؤالك\n` +
+        `• اشرح مشاعرك بدقة\n` +
+        `• لا تتردد في طرح أي استفسار\n\n` +
+        `*الأوامر المتاحة:*\n` +
+        `/start - بدء المحادثة\n` +
+        `/help - هذه الرسالة\n` +
+        `/test - اختبار الذكاء الاصطناعي\n\n` +
+        `🌸 *تذكر:* أنا هنا لأسمعك وأساعدك.`;
       
-      await sendTelegram(chatId, info);
+      await sendTelegramMessage(chatId, helpMessage);
+      return res.status(200).json({ ok: true });
+    }
+    
+    // ===== معالجة أمر /test =====
+    if (update.message?.text === '/test') {
+      const chatId = update.message.chat.id;
+      const userName = update.message.from.first_name;
+      
+      console.log(`🧪 ${userName} يختبر Gemini`);
+      
+      await sendTelegramMessage(chatId, '🔍 *جاري اختبار اتصال Gemini AI...*');
+      
+      try {
+        // اختبار بسيط
+        const testQuestion = "مرحباً، قل لي جملة قصيرة بالعربية";
+        const testResponse = await getGeminiResponse(testQuestion);
+        
+        await sendTelegramMessage(
+          chatId, 
+          `✅ *Gemini AI يعمل بشكل ممتاز!* 🤖\n\n` +
+          `📤 *سؤال الاختبار:* "${testQuestion}"\n\n` +
+          `📥 *رد Gemini:* ${testResponse}\n\n` +
+          `✨ *الحالة:* جاهز لمساعدتك! 💖`
+        );
+      } catch (error) {
+        await sendTelegramMessage(
+          chatId, 
+          `❌ *اختبار Gemini فاشل* 😔\n\n` +
+          `*الخطأ:* ${error.message}\n\n` +
+          `*الحلول المقترحة:*\n` +
+          `1. تأكد من صحة مفتاح API\n` +
+          `2. جرب تحديث المفتاح\n` +
+          `3. تأكد من تفعيل Gemini API`
+        );
+      }
+      
       return res.status(200).json({ ok: true });
     }
     
     // ===== معالجة الرسائل العادية =====
     if (update.message?.text && !update.message.text.startsWith('/')) {
       const chatId = update.message.chat.id;
-      const userId = update.message.from.id;
       const userMessage = update.message.text;
+      const userName = update.message.from.first_name;
+      const userId = update.message.from.id;
       
-      console.log(`👤 ${userId}: ${userMessage}`);
+      console.log(`👤 ${userName} (${userId}): ${userMessage}`);
       
       try {
         // إرسال حالة الكتابة
-        await sendTelegram(chatId, "...", { 
-          method: "sendChatAction", 
-          action: "typing" 
-        });
+        await sendTypingAction(chatId);
         
-        // الحصول على الرد (Gemini أو محلي)
-        const botResponse = await getAIResponse(userId, userMessage);
+        // الحصول على الرد من Gemini
+        const botResponse = await getGeminiResponse(userMessage);
         
         // إرسال الرد
-        await sendTelegram(chatId, botResponse);
+        await sendTelegramMessage(chatId, botResponse);
         
-        // إضافة رسالة إضافية للمستخدمين الجدد
-        if (userMessage.toLowerCase().includes('مرحبا') || userMessage.toLowerCase().includes('اهلا')) {
+        // إذا كان السؤال عن النوم، أضف نصائح إضافية
+        if (userMessage.toLowerCase().includes('نوم')) {
           setTimeout(async () => {
-            await sendTelegram(
-              chatId, 
-              '💡 *نصيحة:* يمكنك سؤالي عن أي شيء!\n' +
-              'مثل: "كيف أعبر عن مشاعري؟" أو "أحتاج مساعدة في كتابة رسالة"'
+            await sendTelegramMessage(
+              chatId,
+              '💡 *نصائح إضافية للنوم الجيد:*\n\n' +
+              '• خذ حماماً دافئاً قبل النوم 🛁\n' +
+              '• اشرب شاي البابونج أو اللافندر ☕\n' +
+              '• اكتب همومك في دفتر قبل النوم 📓\n' +
+              '• مارس تمارين شد العضلات الخفيفة 🧘‍♀️'
             );
           }, 1000);
         }
         
-      } catch (error) {
-        console.error('🔥 خطأ في المعالجة:', error);
+        console.log(`✅ تم الرد على ${userName}`);
         
-        await sendTelegram(
-          chatId, 
-          '⚠️ *حدث خطأ*\n\n' +
-          'عذراً، واجهت مشكلة تقنية.\n' +
-          'يرجى المحاولة مرة أخرى بعد قليل. 🌸'
+      } catch (error) {
+        console.error(`🔥 خطأ في معالجة رسالة ${userName}:`, error);
+        
+        await sendTelegramMessage(
+          chatId,
+          '⚠️ *عذراً، حدث خطأ غير متوقع*\n\n' +
+          'حاول مرة أخرى بعد قليل 🌸\n\n' +
+          'يمكنك استخدام:\n' +
+          '/start - إعادة البدء\n' +
+          '/test - اختبار النظام'
         );
       }
       
@@ -359,9 +313,15 @@ export default async function handler(req, res) {
     }
   }
   
-  return res.status(200).json({ received: true });
+  // إذا وصلنا هنا، نرد بموافقة عامة
+  return res.status(200).json({ ok: true });
 }
 
-console.log('✅ البوت جاهز للعمل!');
-console.log(`🔑 BOT_TOKEN: ${BOT_TOKEN ? '✅' : '❌'}`);
-console.log(`🤖 GEMINI_API_KEY: ${GEMINI_API_KEY ? '✅' : '❌ (سيستخدم ردود محلية)'}`);
+// ===== رسالة البدء في الكونسول =====
+console.log('\n=== ✅ تهيئة البوت اكتملت ===');
+console.log(`🤖 Telegram Bot Token: ${BOT_TOKEN ? '✅ موجود' : '❌ مطلوب'}`);
+console.log(`🎯 Gemini API Key: ${GEMINI_API_KEY ? '✅ موجود' : '⚠️ قد لا يعمل Gemini'}`);
+console.log(`🔗 API Endpoint: /api/bot`);
+console.log(`📡 Model: gemini-2.5-flash`);
+console.log('================================');
+console.log('🌺 البوت جاهز لاستقبال الرسائل!');
