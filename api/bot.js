@@ -11,32 +11,38 @@ let temporaryStorage = [];
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyC6J7E8sx2RfXZLc_ybffvFp7FP2htfP-M";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-// ===== دالة الذكاء الاصطناعي =====
+// ===== دالة الذكاء الاصطناعي المبسطة =====
 async function getAIResponse(prompt, isQuestion = false) {
   try {
+    console.log('🤖 محاولة الاتصال بـ Gemini...');
+    
+    let aiPrompt;
+    if (isQuestion) {
+      // 1. إنشاء سؤال واحد بسيط
+      aiPrompt = `أنشئ سؤالاً واحداً فقط عن المشاعر أو العلاقات بالعربية.
+      السؤال يجب أن:
+      - يكون باللغة العربية
+      - يركز على المشاعر أو العلاقات
+      - يكون مناسباً للعبة عاطفية
+      - يكون جملة واحدة فقط
+      
+      مثال: "كيف تصف مشاعرك تجاه الحب حالياً؟"
+      
+      السؤال:`;
+    } else {
+      // 2. إنشاء تحليل قصير
+      aiPrompt = `قدم تحليلاً قصيراً (3 جمل كحد أقصى) بالعربية.
+      كن إيجابياً ومشجعاً.
+      التحليل:`;
+    }
+
     const payload = {
       contents: [{
-        parts: [{ 
-          text: isQuestion 
-            ? `أنت بوت لعبة المشاعر الجميلة. ${prompt} 
-               أنشئ سؤالاً عاطفياً عميقاً واحداً فقط (سؤال واحد فقط).
-               يجب أن يكون السؤال:
-               - باللغة العربية الفصحى
-               - يركز على المشاعر والعلاقات
-               - مناسب للعبة تحليل المشاعر
-               - يحتوي على خيارات واضحة
-               
-               مثال: "ما هو أكبر مخاوفك في الحب؟" مع خيارات: "الخيانة، الفقدان، عدم التقدير"`
-            : `أنت محلل مشاعر محترف في لعبة المشاعر الجميلة. ${prompt}
-               قدم تحليلاً:
-               - باللغة العربية الفصحى
-               - قصير (3-4 جمل كحد أقصى)
-               - إيجابي ومشجع
-               - يركز على النمو العاطفي
-               - يحتوي على نصيحة واحدة عملية`
-        }]
+        parts: [{ text: aiPrompt + " " + prompt }]
       }]
     };
+    
+    console.log('📤 إرسال إلى Gemini...');
     
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
@@ -44,61 +50,89 @@ async function getAIResponse(prompt, isQuestion = false) {
       body: JSON.stringify(payload)
     });
     
-    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+    console.log('📡 حالة الرد:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini error:', errorText);
+      throw new Error(`API error: ${response.status}`);
+    }
     
     const data = await response.json();
     const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    return aiResponse?.trim() || (isQuestion ? "كيف تصف علاقتك الحالية بالحب؟" : "مشاعرك تستحق الاهتمام والرعاية.");
+    console.log('✅ تم الحصول على رد من Gemini');
+    return aiResponse?.trim() || (isQuestion ? "كيف تصف مشاعرك حالياً؟" : "مشاعرك تستحق الاهتمام.");
     
   } catch (error) {
-    console.error("❌ خطأ في AI:", error);
-    return isQuestion 
-      ? "ما هو الشيء الذي تتمناه في علاقتك العاطفية؟" 
-      : "شكراً لمشاركتك مشاعرك. كل تجربة تضيف لرصيدك العاطفي.";
+    console.error('🔥 خطأ في AI:', error.message);
+    
+    // ردود افتراضية في حالة الفشل
+    const defaultQuestions = [
+      "ما هو شعورك تجاه العلاقات العاطفية؟",
+      "كيف تنظر إلى تجارب الحب السابقة؟",
+      "ما مدى رضاك عن حياتك العاطفية حالياً؟",
+      "ما هو أكبر درس تعلمته من الحب؟",
+      "كيف تحدد معنى الحب بالنسبة لك؟",
+      "ما الذي تتمناه في علاقتك المستقبلية؟"
+    ];
+    
+    const defaultAnalyses = [
+      "مشاعرك صادقة وتستحق التقدير. استمر في الاستماع إلى قلبك.",
+      "كل تجربة تضيف لشخصيتك. أنت تتعلم وتنمو باستمرار.",
+      "الحب رحلة جميلة. استمتع بكل لحظة وتعلم من كل تجربة.",
+      "مشاعرك دليل على إنسانيتك الجميلة. تقبلها واعتز بها."
+    ];
+    
+    if (isQuestion) {
+      const randomIndex = Math.floor(Math.random() * defaultQuestions.length);
+      return defaultQuestions[randomIndex];
+    } else {
+      const randomIndex = Math.floor(Math.random() * defaultAnalyses.length);
+      return defaultAnalyses[randomIndex];
+    }
   }
 }
 
-// ===== إنشاء أسئلة ديناميكية عبر AI =====
-async function generateDynamicQuestion(step) {
-  const questions = [
-    "أنشئ سؤالاً عن المشاعر الحالية للشخص",
-    "أنشئ سؤالاً عن التجارب العاطفية السابقة",
-    "أنشئ سؤالاً عن مستوى السعادة الحالية",
-    "أنشئ سؤالاً عن الحب السابق (استخدم مقياس رقمي)",
-    "أنشئ سؤالاً عن الحب الحالي (استخدم مقياس رقمي)",
-    "أنشئ سؤالاً مفتوحاً عن وصف الحياة العاطفية"
+// ===== إنشاء أسئلة مبسطة =====
+async function generateSimpleQuestion(step) {
+  const questionTypes = [
+    "عن المشاعر الحالية",
+    "عن التجارب السابقة في الحب",
+    "عن مستوى السعادة العامة",
+    "عن قوة المشاعر في الحب السابق (استخدم مقياس رقمي)",
+    "عن قوة المشاعر في الحب الحالي (استخدم مقياس رقمي)",
+    "عن وصف الحياة العاطفية (سؤال مفتوح)"
   ];
   
-  return await getAIResponse(questions[step - 1], true);
-}
-
-// ===== إنشاء تحليل ديناميكي عبر AI =====
-async function generateDynamicAnalysis(answers) {
-  const analysisPrompt = `قم بتحليل المشاعر التالية:
-  - المشاعر الحالية: ${getAnswerText(answers.currentLove)}
-  - التجارب السابقة: ${getAnswerText(answers.pastExperience)}
-  - مستوى السعادة: ${getHappinessText(answers.happiness)}
-  - قوة الحب السابق: ${answers.oldLoveScore}/100
-  - قوة الحب الحالي: ${answers.newLoveScore}/100
-  - الوصف الشخصي: ${answers.lifeDescription || "لم يذكر"}
-  
-  قدم تحليلاً نفسياً وعاطفياً.`;
-  
-  return await getAIResponse(analysisPrompt, false);
-}
-
-// ===== إنشاء خيارات ديناميكية عبر AI =====
-async function generateDynamicOptions(question, step) {
   try {
-    const prompt = `بناء على السؤال: "${question}"
-    أنشئ 4 خيارات للاختيار تكون:
-    - باللغة العربية
-    - قصيرة وواضحة
-    - متنوعة وتغطي مشاعر مختلفة
-    - مناسبة للعبة المشاعر
+    return await getAIResponse(questionTypes[step - 1], true);
+  } catch (error) {
+    // أسئلة افتراضية
+    const defaultQuestions = [
+      "كيف تصف مشاعرك العاطفية في الوقت الحالي؟",
+      "هل لديك تجارب حب سابقة مؤثرة؟",
+      "ما هو مستوى سعادتك في الجانب العاطفي؟",
+      "ما مدى قوة مشاعرك في آخر علاقة حب؟ (أدخل رقماً من 0-100)",
+      "ما مدى قوة مشاعرك العاطفية الحالية؟ (أدخل رقماً من 0-100)",
+      "اكتب وصفاً مختصراً عن مشاعرك الحالية..."
+    ];
+    return defaultQuestions[step - 1] || "كيف تشعر اليوم؟";
+  }
+}
+
+// ===== إنشاء خيارات مبسطة =====
+async function generateSimpleOptions(question, step) {
+  try {
+    // محاولة إنشاء خيارات عبر AI
+    const prompt = `أنشئ خيارات إجابة للسؤال: "${question}"
+    الخيارات يجب أن:
+    - تكون بالعربية
+    - تكون 2-4 خيارات
+    - تكون قصيرة وواضحة
+    - تكون مناسبة للعبة المشاعر
     
-    مثال: ["مليء بالأمل", "حائر بعض الشيء", "أبحث عن الاستقرار", "متفائل بحذر"]`;
+    أمثلة: ["مشاعر قوية", "مشاعر متوسطة", "غير متأكد", "لا يوجد مشاعر حالياً"]`;
     
     const payload = {
       contents: [{
@@ -112,33 +146,38 @@ async function generateDynamicOptions(question, step) {
       body: JSON.stringify(payload)
     });
     
-    if (!response.ok) throw new Error("Failed to generate options");
-    
-    const data = await response.json();
-    const optionsText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    // تحويل النص إلى مصفوفة
-    if (optionsText) {
-      const options = optionsText.split('\n')
-        .filter(line => line.trim())
-        .map(line => line.replace(/^[-\d\.]+/, '').trim())
-        .slice(0, 4);
+    if (response.ok) {
+      const data = await response.json();
+      const optionsText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
-      if (options.length >= 2) return options;
+      if (optionsText) {
+        // تحويل النص إلى مصفوفة
+        const lines = optionsText.split('\n').filter(line => line.trim());
+        const options = lines.map(line => {
+          // إزالة الأرقام والرموز
+          return line.replace(/^[\d\-•.]+\s*/, '').trim();
+        }).filter(opt => opt.length > 0);
+        
+        if (options.length >= 2) {
+          return options.slice(0, 4);
+        }
+      }
     }
-    
   } catch (error) {
-    console.error("❌ خطأ في إنشاء الخيارات:", error);
+    console.error('❌ خطأ في إنشاء الخيارات:', error);
   }
   
-  // خيارات افتراضية في حالة الخطأ
-  const defaultOptions = {
-    1: ["💖 مشاعر قوية وواضحة", "✨ مشاعر متوسطة", "🤔 غير متأكد تماماً", "🌸 أبحث عن مشاعري"],
-    2: ["💔 تجربة عميقة ومؤثرة", "🌟 تجربة جميلة انتهت", "🕊️ لم أحب بعد", "🔐 تجربة خاصة أحتفظ بها"],
-    3: ["😄 سعيد جداً ومتفائل", "🙂 سعيد بدرجة جيدة", "😐 محايد أحاول التحسن", "💭 أبحث عن سعادتي"]
-  };
+  // خيارات افتراضية
+  const defaultOptions = [
+    ["💖 مشاعر قوية وواضحة", "✨ مشاعر متوسطة", "🤔 أحتاج وقتاً", "🌸 لا يوجد مشاعر حالياً"],
+    ["💔 تجارب عميقة", "🌟 تجارب عادية", "🕊️ تجارب محدودة", "🔐 أفضل الخصوصية"],
+    ["😄 سعيد جداً", "🙂 سعيد", "😐 عادي", "💭 أبحث عن السعادة"],
+    ["مشاعر قوية (80-100)", "مشاعر متوسطة (50-79)", "مشاعر خفيفة (20-49)", "لا توجد مشاعر (0-19)"],
+    ["مشاعر عميقة (80-100)", "مشاعر جيدة (50-79)", "مشاعر أولية (20-49)", "لا أعرف (0-19)"],
+    ["أكتب مشاعري...", "أفضل عدم الكتابة", "ليس لدي ما أكتبه", "لاحقاً"]
+  ];
   
-  return defaultOptions[step] || ["نعم", "لا", "ربما", "أفضل عدم الإجابة"];
+  return defaultOptions[step - 1] || ["نعم", "لا", "ربما"];
 }
 
 export default async function handler(req, res) {
@@ -146,9 +185,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).json({ 
       status: "active",
-      service: "🌸 لعبة المشاعر الجميلة (مُحسنة بالذكاء الاصطناعي)",
+      service: "🌸 لعبة المشاعر الجميلة",
       admin: TARGET_ADMIN_ID,
-      ai_enabled: !!GEMINI_API_KEY,
+      ai: !!GEMINI_API_KEY,
       time: new Date().toLocaleString('ar-EG')
     });
   }
@@ -161,39 +200,7 @@ export default async function handler(req, res) {
   processingUsers.add(userId);
 
   try {
-    // أوامر الإدمن
-    if (userId === TARGET_ADMIN_ID && update.message?.text) {
-      const text = update.message.text;
-      
-      if (text === "/admin") {
-        await sendMessage(TARGET_ADMIN_ID,
-          `👑 *مرحباً يا أدمن!*\n` +
-          `🤖 *النسخة المعززة بالذكاء الاصطناعي*\n\n` +
-          `📊 الإجابات: ${temporaryStorage.length}\n` +
-          `👥 النشطون: ${userSessions.size}\n` +
-          `⚡ AI نشط: ${!!GEMINI_API_KEY}\n` +
-          `⏰ ${new Date().toLocaleString('ar-EG')}`,
-          token
-        );
-        return res.status(200).end();
-      }
-      
-      if (text === "/ai_test") {
-        const testQuestion = await getAIResponse("أنشئ سؤالاً اختبارياً عن الحب", true);
-        const testAnalysis = await getAIResponse("أنشئ تحليلاً اختبارياً", false);
-        
-        await sendMessage(TARGET_ADMIN_ID,
-          `🤖 *اختبار الذكاء الاصطناعي*\n\n` +
-          `✅ *السؤال المولد:*\n${testQuestion}\n\n` +
-          `📊 *التحليل المولد:*\n${testAnalysis}\n\n` +
-          `⚡ الحالة: ${GEMINI_API_KEY ? "نشط" : "غير نشط"}`,
-          token
-        );
-        return res.status(200).end();
-      }
-    }
-
-    // بدء اللعبة
+    // بدء اللعبة - إصدار مبسط
     if (update.message?.text?.startsWith("/start")) {
       const user = update.message.from;
       
@@ -207,25 +214,21 @@ export default async function handler(req, res) {
             lastName: user.last_name || "",
             chatId: chatId
           },
-          startTime: Date.now(),
-          dynamicQuestions: [], // لتخزين الأسئلة المولدة
-          dynamicAnswers: [] // لتخزين الإجابات
+          startTime: Date.now()
         },
         step: 1
       });
       
-      const welcomeMsg = await getAIResponse("أنشئ رسالة ترحيب دافئة للعبة المشاعر الجميلة");
-      
       await sendMessage(chatId,
         `🌸 *مرحباً ${user.first_name}!*\n\n` +
-        `${welcomeMsg || "أهلاً بك في رحلة اكتشاف مشاعرك الجميلة"}\n\n` +
-        `🤖 *مميزات النسخة الجديدة:*\n` +
-        `• أسئلة ذكية مولدة بالذكاء الاصطناعي\n` +
-        `• تحليل شخصي فريد لكل مشارك\n` +
-        `• تجربة تفاعلية مخصصة\n\n` +
-        `🚀 ابدأ رحلتك:`,
+        `💝 *لعبة المشاعر الذكية*\n\n` +
+        `🤖 *مميزات النسخة:*\n` +
+        `• أسئلة ذكية متفردة\n` +
+        `• تحليل شخصي لك\n` +
+        `• مشاركة خاصة مع الإدمن\n\n` +
+        `🚀 *لنبدأ الرحلة:*`,
         token, [
-        [{ text: "🌸 ابدأ الرحلة الذكية", callback_data: "start_test" }]
+        [{ text: "🌸 ابدأ اللعبة", callback_data: "start_test" }]
       ]);
       
       return res.status(200).end();
@@ -238,7 +241,7 @@ export default async function handler(req, res) {
       
       if (data === "restart_test") {
         userSessions.delete(chatId);
-        await sendMessage(chatId, "🔄 أرسل /start للبدء برحلة جديدة", token);
+        await sendMessage(chatId, "🔄 أرسل /start للبدء من جديد", token);
         await answerCallback(update.callback_query.id, "✨ تم", token);
         return res.status(200).end();
       }
@@ -246,25 +249,28 @@ export default async function handler(req, res) {
       if (session) {
         if (data === "start_test" && session.state === "welcome") {
           session.state = "q1";
-          await askDynamicQuestion(chatId, session, token);
+          await askQuestion(chatId, session, token);
         }
-        else if (data.startsWith("answer_") && ["q1", "q2", "q3"].includes(session.state)) {
-          const answerIndex = parseInt(data.split("_")[1]);
-          const currentStep = parseInt(session.state.replace("q", ""));
+        else if (data.startsWith("ans_")) {
+          const answerData = data.split("_");
+          const questionNum = parseInt(answerData[1]);
+          const answerIndex = parseInt(answerData[2]);
           
           // حفظ الإجابة
-          session.answers.dynamicAnswers[currentStep - 1] = answerIndex;
+          if (!session.answers.answers) session.answers.answers = {};
+          session.answers.answers[`q${questionNum}`] = answerIndex;
           
-          // الانتقال للسؤال التالي
-          if (currentStep < 3) {
-            session.state = `q${currentStep + 1}`;
-            await askDynamicQuestion(chatId, session, token);
+          // الانتقال للسؤال التالي أو إنهاء
+          if (questionNum < 3) {
+            session.state = `q${questionNum + 1}`;
+            await askQuestion(chatId, session, token);
           } else {
             session.state = "q4";
             await sendMessage(chatId, 
               "🔢 *السؤال 4/6*\n\n" +
-              "على مقياس من 0 إلى 100، ما مدى قوة مشاعرك في تجربتك السابقة؟\n" +
-              "(0 = ضعيفة جداً، 100 = قوية جداً)",
+              "ما مدى قوة مشاعرك في آخر تجربة حب؟\n" +
+              "(أدخل رقماً من 0 إلى 100)\n" +
+              "مثال: 75",
               token
             );
           }
@@ -273,7 +279,7 @@ export default async function handler(req, res) {
         userSessions.set(chatId, session);
       }
       
-      await answerCallback(update.callback_query.id, "✨ تم حفظ إجابتك", token);
+      await answerCallback(update.callback_query.id, "✨ تم", token);
       return res.status(200).end();
     }
 
@@ -290,8 +296,9 @@ export default async function handler(req, res) {
             session.state = "q5";
             await sendMessage(chatId, 
               "💫 *السؤال 5/6*\n\n" +
-              "على مقياس من 0 إلى 100، ما مدى قوة مشاعرك الحالية؟\n" +
-              "(0 = ضعيفة جداً، 100 = قوية جداً)",
+              "ما مدى قوة مشاعرك العاطفية الحالية؟\n" +
+              "(أدخل رقماً من 0 إلى 100)\n" +
+              "مثال: 80",
               token
             );
           } else {
@@ -304,9 +311,9 @@ export default async function handler(req, res) {
             session.answers.newLoveScore = num;
             session.state = "q6";
             await sendMessage(chatId, 
-              "📖 *السؤال الأخير 6/6*\n\n" +
-              "صف مشاعرك الحالية بكلماتك الخاصة...\n" +
-              "(اكتب ما يجول في خاطرك بحرية)",
+              "📖 *السؤال الأخير*\n\n" +
+              "اكتب وصفاً قصيراً عن مشاعرك الحالية...\n" +
+              "(جملة أو جملتين)",
               token
             );
           } else {
@@ -335,144 +342,146 @@ export default async function handler(req, res) {
   }
 }
 
-// ===== دالة لطرح سؤال ديناميكي =====
-async function askDynamicQuestion(chatId, session, token) {
+// ===== دالة لطرح السؤال =====
+async function askQuestion(chatId, session, token) {
   const step = parseInt(session.state.replace("q", ""));
   
   try {
-    // توليد السؤال عبر AI
-    const question = await generateDynamicQuestion(step);
+    // توليد السؤال
+    const question = await generateSimpleQuestion(step);
     
-    // توليد الخيارات عبر AI
-    const options = await generateDynamicOptions(question, step);
+    // توليد الخيارات
+    const options = await generateSimpleOptions(question, step);
     
-    // حفظ السؤال المولد
-    session.answers.dynamicQuestions[step - 1] = question;
-    
-    // إنشاء الأزرار
+    // إنشاء أزرار الخيارات
     const buttons = [];
     for (let i = 0; i < options.length; i++) {
-      if (i % 2 === 0) buttons.push([]);
-      buttons[Math.floor(i / 2)].push({
+      const row = Math.floor(i / 2);
+      if (!buttons[row]) buttons[row] = [];
+      buttons[row].push({
         text: options[i],
-        callback_data: `answer_${i}`
+        callback_data: `ans_${step}_${i}`
       });
     }
     
     await sendMessage(chatId,
       `🎯 *السؤال ${step}/6*\n\n` +
       `${question}\n\n` +
-      `اختر الإجابة التي تعبر عنك:`,
+      `اختر الإجابة المناسبة:`,
       token,
       buttons
     );
     
-    userSessions.set(chatId, session);
-    
   } catch (error) {
-    console.error("❌ خطأ في توليد السؤال:", error);
+    console.error("❌ خطأ في عرض السؤال:", error);
     
-    // استخدام أسئلة افتراضية في حالة الخطأ
+    // استخدام الأسئلة الافتراضية
     const defaultQuestions = [
-      "كيف تصف مشاعرك العاطفية الحالية؟",
-      "ما هي طبيعة تجاربك العاطفية السابقة؟",
-      "ما هو مستوى سعادتك في الجانب العاطفي حالياً؟"
+      "ما هو شعورك تجاه الحب حالياً؟",
+      "كيف تنظر إلى تجاربك العاطفية السابقة؟",
+      "ما هو مستوى سعادتك العامة؟"
     ];
     
     const defaultOptions = [
-      ["💖 مشاعر واضحة وقوية", "✨ مشاعر متوسطة", "🤔 أشعر بالحيرة", "🌸 أبحث عن مشاعري"],
-      ["💔 تجارب عميقة ومؤثرة", "🌟 تجارب جميدة انتهت", "🕊️ تجارب محدودة", "🔐 خصوصية"],
-      ["😄 سعيد جداً", "🙂 سعيد", "😐 محايد", "💭 أبحث عن السعادة"]
+      ["💖 مشاعر إيجابية", "✨ مشاعر متوسطة", "🤔 غير متأكد", "🌸 لست مهتماً حالياً"],
+      ["💔 تجارب عميقة", "🌟 تجارب عادية", "🕊️ تجارب قليلة", "🔐 أفضّل الخصوصية"],
+      ["😄 سعيد جداً", "🙂 سعيد", "😐 عادي", "💭 لست سعيداً"]
     ];
     
-    const buttons = defaultOptions[step - 1].map((option, index) => ({
-      text: option,
-      callback_data: `answer_${index}`
-    }));
+    const buttons = [];
+    const currentOptions = defaultOptions[step - 1] || ["نعم", "لا"];
+    
+    for (let i = 0; i < currentOptions.length; i++) {
+      const row = Math.floor(i / 2);
+      if (!buttons[row]) buttons[row] = [];
+      buttons[row].push({
+        text: currentOptions[i],
+        callback_data: `ans_${step}_${i}`
+      });
+    }
     
     await sendMessage(chatId,
       `🎯 *السؤال ${step}/6*\n\n` +
-      `${defaultQuestions[step - 1]}\n\n` +
-      `اختر الإجابة التي تعبر عنك:`,
+      `${defaultQuestions[step - 1] || "كيف تشعر اليوم؟"}\n\n` +
+      `اختر الإجابة المناسبة:`,
       token,
-      [buttons.slice(0, 2), buttons.slice(2, 4)]
+      buttons
     );
   }
 }
 
 async function processFinalAnswers(chatId, session, token) {
   try {
-    await sendMessage(chatId, "🤖 *جاري تحليل إجاباتك بواسطة الذكاء الاصطناعي...*", token);
+    await sendMessage(chatId, "🤖 *جاري تحليل إجاباتك...*", token);
 
     const user = session.answers.userInfo;
     
-    // توليد التحليل عبر AI
-    const aiAnalysis = await generateDynamicAnalysis(session.answers);
+    // توليد التحليل
+    const analysisPrompt = `المستخدم أجاب على الأسئلة العاطفية.
+    المشاعر السابقة: ${session.answers.oldLoveScore}/100
+    المشاعر الحالية: ${session.answers.newLoveScore}/100
+    الوصف: ${session.answers.lifeDescription || "لم يذكر"}`;
     
-    // حساب التوافق
-    const compatibility = calculateCompatibility(
-      session.answers.oldLoveScore || 0,
-      session.answers.newLoveScore || 0,
-      session.answers.happiness || "happy_neutral"
+    const aiAnalysis = await getAIResponse(analysisPrompt, false);
+    
+    // حساب النتيجة
+    const score = Math.round(
+      (session.answers.newLoveScore * 0.6) + 
+      (session.answers.oldLoveScore * 0.4)
     );
-
-    // تخزين مع التحليل AI
+    const finalScore = Math.min(100, Math.max(0, score));
+    
+    // تخزين
     temporaryStorage.push({
       user: user,
       answers: session.answers,
-      compatibility: compatibility,
-      aiAnalysis: aiAnalysis,
+      score: finalScore,
+      analysis: aiAnalysis,
       timestamp: new Date().toISOString()
     });
 
-    // إرسال التقرير للإدمن
+    // إرسال للإدمن
     const adminReport = `
-🎯 *إجابة جديدة (نسخة AI)*
+🎯 *إجابة جديدة*
 👤 ${user.firstName} (@${user.username || 'بدون'})
 🆔 \`${user.id}\`
 
-📋 *الإجابات الديناميكية:*
-${session.answers.dynamicQuestions.map((q, i) => 
-  `${i+1}️⃣ ${q}\n   → ${session.answers.dynamicAnswers[i] !== undefined ? 
-    getAnswerFromIndex(session.answers.dynamicAnswers[i], i) : 'لم يجب'}`).join('\n')}
+📊 *النتائج:*
+الحب السابق: ${session.answers.oldLoveScore}/100
+الحب الحالي: ${session.answers.newLoveScore}/100
+النتيجة النهائية: ${finalScore}%
 
-📊 *الإجابات الرقمية:*
-حب سابق: ${session.answers.oldLoveScore}/100
-حب حالي: ${session.answers.newLoveScore}/100
-
-💭 *الوصف الشخصي:*
+💭 *الوصف:*
 ${session.answers.lifeDescription || "لم يذكر"}
 
-🤖 *تحليل الذكاء الاصطناعي:*
-${aiAnalysis.substring(0, 200)}...
+🤖 *التحليل:*
+${aiAnalysis.substring(0, 150)}...
 
-📈 *نتيجة التوافق:* ${compatibility.score}%
 ⏰ ${new Date().toLocaleString('ar-EG')}
     `;
 
     await sendMessage(TARGET_ADMIN_ID, adminReport.trim(), token, [[
-      { text: "💬 تواصل مباشر", url: `tg://user?id=${user.id}` },
-      { text: "📊 تفاصيل التحليل", callback_data: `analysis_${user.id}` }
+      { text: "💬 تواصل", url: `tg://user?id=${user.id}` }
     ]]);
 
-    // إرسال النتيجة للمستخدم
-    const userMessage = `🎉 *تم تحليل مشاعرك بنجاح!*\n\n` +
-      `✨ *تحليل الذكاء الاصطناعي:*\n` +
+    // إرسال للمستخدم
+    await sendMessage(chatId,
+      `🎉 *تم الانتهاء!*\n\n` +
+      `✨ *تحليل مشاعرك:*\n` +
       `${aiAnalysis}\n\n` +
-      `📊 *درجة التوافق العاطفي:* ${compatibility.score}%\n\n` +
-      `💖 *ملاحظة:*\n` +
-      `تم إرسال تحليل مفصل للإدمن.\n` +
-      `شكراً لمشاركتك مشاعرك بصدق! 🌸\n\n` +
-      `🔄 أرسل /start لرحلة جديدة`;
-
-    await sendMessage(chatId, userMessage, token);
+      `📊 *نتيجتك:* ${finalScore}%\n\n` +
+      `💖 *شكراً لمشاركتك*\n` +
+      `إجاباتك وصلت للإدمن بشكل خاص 🌸\n\n` +
+      `🔄 أرسل /start للعب مرة أخرى`,
+      token
+    );
 
     userSessions.delete(chatId);
     
   } catch (error) {
-    console.error("❌ خطأ في المعالجة النهائية:", error);
+    console.error("❌ خطأ في النهاية:", error);
     await sendMessage(chatId, 
-      "⚠️ حدث خطأ في التحليل، لكن إجاباتك وصلت للإدمن.\nأرسل /start للمحاولة مجدداً", 
+      "⚠️ حدث خطأ، لكن إجاباتك وصلت للإدمن.\nأرسل /start للعب مرة أخرى", 
       token
     );
     userSessions.delete(chatId);
@@ -480,54 +489,6 @@ ${aiAnalysis.substring(0, 200)}...
 }
 
 // ===== دوال مساعدة =====
-function getAnswerFromIndex(index, questionIndex) {
-  const answersMap = {
-    0: ["💖 مشاعر واضحة وقوية", "💔 تجارب عميقة ومؤثرة", "😄 سعيد جداً"],
-    1: ["✨ مشاعر متوسطة", "🌟 تجارب جميدة انتهت", "🙂 سعيد"],
-    2: ["🤔 أشعر بالحيرة", "🕊️ تجارب محدودة", "😐 محايد"],
-    3: ["🌸 أبحث عن مشاعري", "🔐 خصوصية", "💭 أبحث عن السعادة"]
-  };
-  return answersMap[index]?.[questionIndex] || "إجابة غير معروفة";
-}
-
-function calculateCompatibility(old, curr, happy) {
-  const bonus = { "happy_very": 15, "happy_yes": 10, "happy_neutral": 5, "happy_no": -5 };
-  const score = Math.min(100, Math.max(0, Math.round((curr * 0.7) + (old * 0.3) + (bonus[happy] || 0))));
-  
-  let level;
-  if (score >= 85) level = "💖 اتصال عاطفي عميق";
-  else if (score >= 70) level = "✨ علاقة واعدة";
-  else if (score >= 50) level = "🌷 بداية جميلة";
-  else if (score >= 30) level = "🌱 تحتاج للرعاية";
-  else level = "🌸 رحلة البحث مستمرة";
-  
-  return { score, level };
-}
-
-function getAnswerText(key) {
-  const map = {
-    'love_strong': '💖 مشاعر قوية',
-    'love_moderate': '✨ مشاعر متوسطة',
-    'love_unsure': '🤔 غير متأكد',
-    'love_no': '🌸 ليس الآن',
-    'past_deep': '💔 تجربة عميقة',
-    'past_ended': '🌟 تجربة انتهت',
-    'past_none': '🕊️ ليس بعد',
-    'past_secret': '🔐 خصوصية'
-  };
-  return map[key] || 'غير محدد';
-}
-
-function getHappinessText(key) {
-  const map = {
-    'happy_very': '😄 سعيد جداً',
-    'happy_yes': '🙂 سعيد',
-    'happy_neutral': '😐 محايد',
-    'happy_no': '💭 أبحث عن السعادة'
-  };
-  return map[key] || 'غير محدد';
-}
-
 async function sendMessage(chatId, text, token, keyboard = null) {
   try {
     const body = { 
@@ -555,14 +516,14 @@ async function answerCallback(id, text, token) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
         callback_query_id: id, 
-        text: text || "✨ تم",
+        text: text || "✨",
         show_alert: false 
       })
     });
   } catch (error) {
-    console.error("❌ رد على callback:", error);
+    console.error("❌ رد callback:", error);
   }
 }
 
-console.log('🚀 البوت يعمل مع الذكاء الاصطناعي...');
-console.log(`🤖 Gemini API: ${GEMINI_API_KEY ? '✅ نشط' : '❌ غير نشط'}`);
+console.log('🚀 البوت يعمل...');
+console.log(`🤖 Gemini: ${GEMINI_API_KEY ? '✅ نشط' : '⚠️ غير نشط'}`);
