@@ -1,56 +1,61 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const TelegramBot = require('node-telegram-bot-api');
 
-// تهيئة الأدوات باستخدام متغيرات البيئة التي ضبطتها في Vercel
+// تهيئة API Gemini مع تحديد الإصدار لحل مشكلة الـ 404
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const bot = new TelegramBot(process.env.BOT_TOKEN);
+
+// تعيين النموذج مع إعدادات توافق إضافية
 const model = genAI.getGenerativeModel({ 
-  model: 'gemini-1.5-flash',
-  generationConfig: { maxOutputTokens: 100, temperature: 0.7 }
-});
+  model: "gemini-1.5-flash" 
+}, { apiVersion: 'v1beta' }); 
 
 export default async function handler(req, res) {
-  // استقبال طلبات POST فقط من تلجرام
+  // استقبال طلبات تلجرام فقط
   if (req.method !== 'POST') {
-    return res.status(200).send('Bot is Active ✅');
+    return res.status(200).send('Bot Status: Active ✅');
   }
 
-  const { message, callback_query } = req.body;
-  const chatId = message?.chat?.id || callback_query?.message?.chat?.id;
-  const text = message?.text;
+  const { message } = req.body;
+
+  // إذا لم تكن هناك رسالة نصية، تجاهل الطلب
+  if (!message || !message.text) {
+    return res.status(200).end();
+  }
+
+  const chatId = message.chat.id;
+  const userText = message.text;
 
   try {
-    // 1. التعامل مع أمر البدء
-    if (text === '/start') {
-      await bot.sendMessage(chatId, 
-        "🌸 مرحباً بك في مختبر التوافق العاطفي!\n\n" +
-        "أنا ذكاء اصطناعي بسيط، أرسل لي أي رسالة وسأرد عليك بذكائي المحدود، أو انتظر تحديث نظام الأسئلة بالكامل قريباً! 😊"
-      );
+    // إظهار أن البوت يكتب الآن
+    await bot.sendChatAction(chatId, 'typing');
+
+    // منطق البدء
+    if (userText === '/start') {
+      await bot.sendMessage(chatId, "🌸 أهلاً بك! أنا الآن متصل بذكاء Gemini. أرسل أي شيء وسأرد عليك.");
       return res.status(200).end();
     }
 
-    // 2. معالجة الرسائل النصية باستخدام Gemini
-    if (text) {
-      // إظهار حالة "جاري الكتابة" في تلجرام
-      await bot.sendChatAction(chatId, 'typing');
+    // إرسال النص لـ Gemini للحصول على رد
+    const prompt = `رد بجملة واحدة بسيطة كصديق على: "${userText}"`;
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const aiText = response.text();
 
-      // إعداد الطلب لـ Gemini
-      const prompt = `أنت بوت بسيط جداً للمشاعر. رد بجملة واحدة (5 كلمات) وإيموجي واحد على: "${text}"`;
-      
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const aiResponse = response.text();
-
-      // إرسال رد الـ AI للمستخدم
-      await bot.sendMessage(chatId, `🤖 ${aiResponse}`);
-    }
+    // إرسال رد الذكاء الاصطناعي للمستخدم
+    await bot.sendMessage(chatId, `🤖 ${aiText}`);
 
   } catch (error) {
     console.error('Error Details:', error);
-    // إرسال رسالة خطأ واضحة للمستخدم في حال فشل الـ API
-    await bot.sendMessage(chatId, `⚠️ عذراً، حدث خطأ: ${error.message.includes('API key') ? 'مشكلة في مفتاح API' : 'مشكلة تقنية مؤقتة'}`);
+    
+    // رد مخصص في حال فشل الـ AI لتعرف السبب
+    let errorMessage = "⚠️ واجهت مشكلة في الاتصال بذكائي.";
+    if (error.message.includes('404')) errorMessage = "⚠️ خطأ: النموذج غير متاح في منطقتك حالياً.";
+    if (error.message.includes('API key')) errorMessage = "⚠️ خطأ: مفتاح API غير صحيح أو غير مفعل.";
+    
+    await bot.sendMessage(chatId, errorMessage);
   }
 
-  // إغلاق الطلب بنجاح
+  // إنهاء الطلب بنجاح لـ Vercel
   res.status(200).end();
 }
