@@ -1,100 +1,157 @@
-import fetch from 'node-fetch';
+// api/bot.js
+import fetch from "node-fetch";
 
-// إعدادات البيئة
+/* ================== الإعدادات ================== */
 const BOT_TOKEN = process.env.BOT_TOKEN;
-// تأكد من وضع المفتاح الصحيح هنا أو في إعدادات Vercel
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyC6J7E8sx2RfXZLc_ybffvFp7FP2htfP-M";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// رابط Gemini الصحيح (استخدام v1beta مع gemini-1.5-flash)
-// ملاحظة: لا يوجد حالياً إصدار رسمي باسم 2.5-flash، الأحدث والمستقر هو 1.5-flash
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
+/* ================== Rate Limiting ================== */
 let requestCount = 0;
-let lastResetTime = Date.now();
-const REQUEST_LIMIT = 15;
-const RESET_INTERVAL = 60000;
+let lastReset = Date.now();
+const LIMIT = 15;
+const RESET_TIME = 60 * 1000;
 
 function checkRateLimit() {
-    const now = Date.now();
-    if (now - lastResetTime > RESET_INTERVAL) {
-        requestCount = 0;
-        lastResetTime = now;
-    }
-    if (requestCount >= REQUEST_LIMIT) return false;
-    requestCount++;
-    return true;
+  const now = Date.now();
+  if (now - lastReset > RESET_TIME) {
+    requestCount = 0;
+    lastReset = now;
+  }
+  if (requestCount >= LIMIT) return false;
+  requestCount++;
+  return true;
 }
 
-async function getGeminiResponse(userMessage, retryCount = 0) {
-    try {
-        if (!checkRateLimit()) {
-            throw new Error('Rate limit exceeded');
-        }
+/* ================== Gemini ================== */
+async function getGeminiResponse(text) {
+  if (!checkRateLimit()) {
+    throw new Error("RATE_LIMIT");
+  }
 
-        const payload = {
-            contents: [{ parts: [{ text: userMessage }] }]
-        };
+  const payload = {
+    contents: [
+      {
+        parts: [{ text }]
+      }
+    ]
+  };
 
-        // ملاحظة: نمرر المفتاح كـ Query Parameter كما في الرابط أدناه
-        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+  const response = await fetch(GEMINI_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-goog-api-key": GEMINI_API_KEY // ✅ نفس HTML
+    },
+    body: JSON.stringify(payload)
+  });
 
-        const data = await response.json();
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || "Gemini Error");
+  }
 
-        if (!response.ok) {
-            console.error('Gemini Error:', data);
-            throw new Error(data.error?.message || 'Error from Gemini API');
-        }
-
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "لم أستطع معالجة هذا الطلب.";
-    } catch (error) {
-        console.error('Fetch Error:', error.message);
-        throw error;
-    }
+  const data = await response.json();
+  return (
+    data.candidates?.[0]?.content?.parts?.[0]?.text ||
+    "لم أستطع توليد رد واضح."
+  );
 }
 
-// دالة إرسال رسائل تيليجرام
-async function sendTelegramMessage(chatId, text) {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text: text,
-            parse_mode: "Markdown"
-        })
-    });
+/* ================== Telegram ================== */
+async function sendMessage(chatId, text) {
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "Markdown"
+    })
+  });
 }
 
+async function sendTyping(chatId) {
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      action: "typing"
+    })
+  });
+}
+
+/* ================== ردود سريعة ================== */
+function quickReply(text, name) {
+  if (text.includes("مرحبا") || text.includes("اهلا"))
+    return `مرحباً ${name} 😊`;
+  if (text.includes("شكرا")) return `العفو ${name} 🌸`;
+  return `أنا هنا للمساعدة ${name} 🤖`;
+}
+
+/* ================== Handler ================== */
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(200).json({ status: "Bot is running" });
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  if (req.method === "GET") {
+    return res.status(200).json({
+      status: "OK",
+      bot: "Telegram Gemini Bot",
+      rate: `${requestCount}/${LIMIT}`
+    });
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).end();
+  }
+
+  const update = req.body;
+  if (!update.message) return res.status(200).end();
+
+  const chatId = update.message.chat.id;
+  const text = update.message.text || "";
+  const name = update.message.from.first_name || "صديقي";
+
+  try {
+    if (text === "/start") {
+      await sendMessage(
+        chatId,
+        `👋 أهلاً ${name}\n\n🤖 أنا بوت ذكاء اصطناعي\nاكتب سؤالك مباشرة`
+      );
+      return res.status(200).end();
     }
 
-    const update = req.body;
-    if (!update.message || !update.message.text) {
-        return res.status(200).json({ ok: true });
+    if (text === "/simple") {
+      await sendMessage(chatId, quickReply("مرحبا", name));
+      return res.status(200).end();
     }
 
-    const chatId = update.message.chat.id;
-    const text = update.message.text;
+    if (text.startsWith("/")) return res.status(200).end();
+
+    await sendTyping(chatId);
 
     try {
-        if (text === '/start') {
-            await sendTelegramMessage(chatId, "أهلاً بك! أنا بوت ذكي مدعوم بـ Gemini. اسألني أي شيء!");
-            return res.status(200).json({ ok: true });
-        }
-
-        // الحصول على رد من Gemini
-        const aiResponse = await getGeminiResponse(text);
-        await sendTelegramMessage(chatId, aiResponse);
-
-    } catch (error) {
-        await sendTelegramMessage(chatId, "عذراً، واجهت مشكلة في الاتصال بالذكاء الاصطناعي حالياً.");
+      const reply = await getGeminiResponse(text);
+      await sendMessage(chatId, reply);
+    } catch (err) {
+      if (err.message === "RATE_LIMIT") {
+        await sendMessage(
+          chatId,
+          "⚠️ ضغط عالي على الخادم\nحاول بعد دقيقة"
+        );
+      } else {
+        await sendMessage(
+          chatId,
+          "⚠️ تم استخدام الرد السريع\n\n" + quickReply(text, name)
+        );
+      }
     }
+  } catch (e) {
+    await sendMessage(chatId, "❌ حدث خطأ غير متوقع");
+  }
 
-    return res.status(200).json({ ok: true });
+  return res.status(200).end();
 }
