@@ -10,87 +10,98 @@ const GEMINI_API_URL =
 
 /* ========== ذاكرة الأسئلة ========== */
 const questionCache = new Map();
+const userSessions = new Map();
 
-/* ========== نظام التفكير والعمق ========== */
+/* ========== مستويات التفكير العميقة ========== */
 const THINKING_LEVELS = {
   light: {
-    name: "💡 تفكير خفيف",
-    prompt: "أسئلة بسيطة ومرحة للمحادثات اليومية"
+    name: "💡 بداية خفيفة",
+    prompt: "أسئلة سهلة للبدء والتعارف",
+    depth: 1
   },
   medium: {
     name: "🤔 تفكير متوسط",
-    prompt: "أسئلة تتطلب بعض التفكير والتأمل الذاتي"
+    prompt: "أسئلة تتطلب تأملاً وصراحة",
+    depth: 2
   },
   deep: {
     name: "🧠 تفكير عميق",
-    prompt: "أسئلة فلسفية وعميقة تتطلب تأملاً طويلاً"
+    prompt: "أسئلة فلسفية وجوهرية عن الحياة",
+    depth: 3
   },
   creative: {
-    name: "🎨 تفكير إبداعي",
-    prompt: "أسئلة إبداعية تحفز الخيال والابتكار"
+    name: "🎨 إبداع وخيال",
+    prompt: "أسئلة إبداعية تحفز التفكير خارج الصندوق",
+    depth: 4
   },
-  emotional: {
-    name: "💖 تفكير عاطفي",
-    prompt: "أسئلة عاطفية تلامس المشاعر والذكريات"
+  soul: {
+    name: "💖 أسئلة الروح",
+    prompt: "أسئلة تلامس الأعماق والمشاعر والأحلام",
+    depth: 5
   }
 };
 
-/* ========== أنواع الأسئلة ========== */
+/* ========== فئات الأسئلة ========== */
 const QUESTION_CATEGORIES = {
-  comedy: "😂 كوميديا ومرح",
-  truth: "🔥 صراحة وجرأة",
-  free: "🗣️ حديث حر",
-  love: "❤️ غرام وعواطف",
-  couples: "💞 علاقات وعشاق",
-  funny: "🤣 مواقف مضحكة",
-  daily: "📔 يوميات وحياة",
-  personality: "🧠 شخصية وتفكير",
-  philosophy: "🌌 فلسفة وحياة",
-  future: "🚀 مستقبل وتطلعات",
-  memories: "📸 ذكريات وماضي"
+  life: "🌍 الحياة والتجارب",
+  relationships: "💞 العلاقات والعواطف",
+  personality: "🧠 الشخصية والتفكير",
+  memories: "📸 الذكريات والماضي",
+  future: "🚀 المستقبل والتطلعات",
+  dreams: "✨ الأحلام والطموحات",
+  fears: "😨 المخاوف والتحديات",
+  values: "💎 القيم والمبادئ",
+  humor: "😂 الكوميديا والمرح",
+  philosophy: "🤔 الفلسفة والحكمة"
 };
 
-/* ========== حالة المستخدم ========== */
-const userStates = new Map();
-
-/* ========== توليد الأسئلة باستخدام Gemini ========== */
-async function generateQuestion(category, thinkingLevel = "medium", previousQuestions = []) {
-  const cacheKey = `${category}_${thinkingLevel}`;
+/* ========== توليد الأسئلة باستخدام Gemini فقط ========== */
+async function generateGeminiQuestion(category, thinkingLevel, previousQuestions = []) {
+  const cacheKey = `${category}_${thinkingLevel}_${previousQuestions.length}`;
   
-  // محاولة الاسترجاع من الذاكرة المؤقتة
-  if (questionCache.has(cacheKey)) {
-    const cached = questionCache.get(cacheKey);
-    if (cached.questions.length > 0) {
-      const question = cached.questions.pop();
-      return question;
+  // تنظيف الكاش القديم (أكثر من 10 دقائق)
+  const now = Date.now();
+  for (const [key, value] of questionCache.entries()) {
+    if (now - value.timestamp > 10 * 60 * 1000) {
+      questionCache.delete(key);
     }
+  }
+  
+  if (questionCache.has(cacheKey)) {
+    return questionCache.get(cacheKey).question;
   }
 
   try {
-    const thinkingPrompt = THINKING_LEVELS[thinkingLevel].prompt;
+    const levelInfo = THINKING_LEVELS[thinkingLevel];
     const categoryName = QUESTION_CATEGORIES[category];
     
-    const prompt = `
-أنت مساعد ذكي في لعبة أسئلة تفاعلية.
-مهمتك: إنشاء سؤال واحد ${thinkingPrompt} في فئة "${categoryName}".
+    const prompt = `أنت مساعد خبير في إنشاء أسئلة عميقة ومحفزة للتفكير.
+    
+**المهمة:** إنشاء سؤال واحد فقط.
 
-**المتطلبات:**
-1. السؤال يجب أن يكون باللغة العربية
-2. يجب أن يكون فريداً ومبتكراً
-3. مناسب للعبة تفاعلية مع الأصدقاء
-4. يحفز التفكير والنقاش
-5. لا يتجاوز 20 كلمة
-6. لا يستخدم علامات الترقيم الزائدة
-7. ليس من القائمة التالية: ${previousQuestions.slice(0, 3).join(', ') || 'لا توجد'}
+**التفاصيل:**
+- مستوى التفكير: ${levelInfo.name} (${levelInfo.prompt})
+- الفئة: ${categoryName}
+- العمق المطلوب: ${levelInfo.depth}/5
+- اللغة: العربية الفصحى أو العامية المفهومة
 
-**أمثلة على الأسئلة الجيدة:**
-- ما هو الشيء الذي تعلمته من أكبر خطأ ارتكبته؟
-- كيف تتخيل نفسك بعد عشر سنوات من الآن؟
-- ما هي القيمة التي لن تتخلى عنها أبداً؟
-- إذا كان لديك فرصة لتعلم مهارة جديدة فماذا ستختار؟
+**مواصفات السؤال المطلوب:**
+1. سؤال واحد فقط، واضح ومباشر
+2. لا يزيد عن 15 كلمة
+3. يحفز التفكير والتأمل
+4. مناسب للمحادثات العميقة
+5. غير تقليدي ويحمل عمقاً
+6. لا يستخدم كلمات مبتذلة أو نمطية
+7. يلامس الجوانب الإنسانية
+8. ليس من هذه الأسئلة السابقة: ${previousQuestions.slice(-3).join(' | ') || 'لا يوجد'}
 
-**أنشئ سؤالاً واحداً فقط:**
-    `;
+**أمثلة للأسئلة الممتازة (للإلهام فقط لا تكررها):**
+- "ما هو الشيء الذي تعلمته من أكثر لحظة صعوبة في حياتك؟"
+- "إذا استطعت تغيير قرار واحد من ماضيك، فماذا سيكون ولماذا؟"
+- "ما هو تعريفك للنجاح وهل تشعر أنك نجحت؟"
+- "ما هي القصة التي لم تخبرها لأحد وتود مشاركتها؟"
+
+**أنشئ سؤالاً واحداً فريداً حسب المواصفات أعلاه:**`;
 
     const response = await fetch(GEMINI_API_URL, {
       method: "POST",
@@ -101,112 +112,87 @@ async function generateQuestion(category, thinkingLevel = "medium", previousQues
       body: JSON.stringify({
         contents: [{ 
           parts: [{ 
-            text: prompt.trim()
+            text: prompt 
           }] 
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.9,
+          topK: 1,
+          topP: 0.9,
+          maxOutputTokens: 100
+        }
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(`Gemini API Error: ${response.status} - ${JSON.stringify(errorData)}`);
     }
 
     const data = await response.json();
     let question = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!question) {
-      throw new Error("No question generated");
+      throw new Error("لم يتم توليد سؤال من Gemini");
     }
     
     // تنظيف النص
     question = question
-      .replace(/["']/g, '')
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/^(سؤال|السؤال|أسألك|اسألك):?\s*/i, '')
       .replace(/\*\*/g, '')
-      .replace(/^[\d.\-•*]\s*/gm, '')
+      .split('\n')[0]
       .trim();
     
-    // إذا كان النص طويلاً جداً، نأخذ الجملة الأولى
-    if (question.split(' ').length > 25) {
-      question = question.split(/[.!?]/)[0] + '؟';
+    // التأكد من أن السؤال ليس فارغاً
+    if (!question || question.length < 10) {
+      throw new Error("السؤال الناتج قصير جداً أو فارغ");
     }
     
     // التأكد من وجود علامة استفهام
-    if (!question.endsWith('؟')) {
+    if (!question.endsWith('؟') && !question.endsWith('?')) {
       question += '؟';
     }
     
-    // تخزين في الذاكرة المؤقتة
-    if (!questionCache.has(cacheKey)) {
-      questionCache.set(cacheKey, { questions: [], timestamp: Date.now() });
-    }
-    
-    const cache = questionCache.get(cacheKey);
-    cache.questions.push(question);
-    
-    // تنظيف الذاكرة القديمة
-    setTimeout(() => {
-      if (Date.now() - cache.timestamp > 300000) { // 5 دقائق
-        questionCache.delete(cacheKey);
-      }
-    }, 300000);
+    // تخزين في الكاش
+    questionCache.set(cacheKey, {
+      question,
+      timestamp: Date.now(),
+      category,
+      thinkingLevel
+    });
     
     return question;
     
   } catch (error) {
-    console.error("Error generating question:", error);
-    
-    // الأسئلة الاحتياطية الذكية
-    const fallbackQuestions = {
-      comedy: [
-        "إذا استطعت إضافة قانون جديد للمجتمع، فماذا سيكون ولماذا؟",
-        "ما هو الموقف الذي يضحكك كلما تذكرته؟",
-        "إذا تحولت وجبة العشاء إلى مسابقة، فماذا ستقدم للفوز؟"
-      ],
-      philosophy: [
-        "ما هو تعريفك للسعادة الحقيقية؟",
-        "هل تعتقد أن الأخطاء ضرورية للتطور؟ ولماذا؟",
-        "ما هي القيمة التي تعتقد أنها أهم في الحياة؟"
-      ],
-      future: [
-        "ما هو الإنجاز الذي تأمل تحقيقه في السنوات الخمس المقبلة؟",
-        "كيف تتخيل العالم بعد 50 سنة من الآن؟",
-        "ما هي المهارة التي ترغب في تطويرها لتواكب المستقبل؟"
-      ],
-      emotional: [
-        "ما هو الشعور الذي تتمنى أن يعرفه الآخرون عنك؟",
-        "ما هي الذكرى التي تمنيت لو استطعت العيش فيها مرة أخرى؟",
-        "ما هو الشيء الذي يجعلك تشعر بالامتنان اليوم؟"
-      ]
-    };
-    
-    const questions = fallbackQuestions[category] || fallbackQuestions.philosophy;
-    return questions[Math.floor(Math.random() * questions.length)];
+    console.error("❌ فشل توليد سؤال من Gemini:", error.message);
+    throw new Error("🤖 عذراً، لم أستطع توليد سؤال الآن. جرب مرة أخرى أو اختر فئة مختلفة.");
   }
 }
 
-/* ========== توليد ردود ذكية ========== */
-async function generateSmartResponse(question, userAnswer) {
+/* ========== توليد رد ذكي باستخدام Gemini ========== */
+async function generateGeminiResponse(userAnswer, originalQuestion, thinkingLevel) {
   try {
-    const prompt = `
-سؤال: "${question}"
-إجابة المستخدم: "${userAnswer}"
+    const prompt = `أنت مساعد حكيم في محادثات عميقة.
+    
+**السؤال الأصلي:** ${originalQuestion}
+**إجابة المستخدم:** ${userAnswer}
+**مستوى العمق:** ${THINKING_LEVELS[thinkingLevel].name}
 
-أنت مساعد في لعبة أسئلة. مهمتك تقديم رد ذكي على إجابة المستخدم.
+**مهمتك:** كتابة رد واحد فقط يعكس تفاعلاً ذكياً مع الإجابة.
 
-**المتطلبات:**
-1. ابدأ بثناء لطيف على المشاركة
-2. قدم ملاحظة ذكية أو سؤال متابعة
-3. شجع على التفكير أكثر
-4. اجعل الرد باللغة العربية
-5. لا تقدم نصيحة مباشرة
-6. لا تنتقد الإجابة
-7. اجعل الرد قصيراً (2-3 جمل)
+**مواصفات الرد:**
+1. ابدأ بملاحظة إيجابية عن الإجابة
+2. قدم نظرة عميقة أو سؤالاً متابعة محفزاً
+3. لا تقدم نقداً سلبياً
+4. لا تكرر كلام المستخدم
+5. اجعل الرد بين 2-3 جمل
+6. استخدم لغة عربية جميلة ومؤثرة
+7. حافظ على جو الحوار العميق
+8. لا تقدم نصيحة مباشرة إلا إذا طلب
 
-**مثال:**
-"رائع! هذه نظرة مثيرة للاهتمام. هل فكرت في كيفية تطبيق هذا المبدأ في مواقف أخرى؟"
-
-**الرد الذكي:**
-    `;
+**الرد الذكي المناسب:**`;
 
     const response = await fetch(GEMINI_API_URL, {
       method: "POST",
@@ -217,67 +203,89 @@ async function generateSmartResponse(question, userAnswer) {
       body: JSON.stringify({
         contents: [{ 
           parts: [{ 
-            text: prompt.trim()
+            text: prompt 
           }] 
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.8,
+          topK: 1,
+          topP: 0.8,
+          maxOutputTokens: 150
+        }
       })
     });
 
     if (!response.ok) {
-      return "🌟 شكراً لمشاركتك! إجابتك تضيف منظوراً قيماً.";
+      return "💭 شكراً لمشاركتك. إجابتك تضيف عمقاً للحوار.";
     }
 
     const data = await response.json();
     let reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!reply) {
-      return "💭 إجابة عميقة! هل تريد التفكير في سؤال آخر؟";
+      return "✨ إجابة تستحق التأمل. هل تود مشاركة المزيد؟";
     }
     
     return reply.trim();
     
   } catch (error) {
-    return "✨ إجابة تستحق التأمل!";
+    console.error("❌ فشل توليد رد من Gemini:", error);
+    return "🌟 شكراً لمشاركتك أفكارك. كل إجابة تثري الحوار.";
   }
 }
 
 /* ========== أدوات تيليجرام ========== */
-async function sendTelegramMessage(chatId, text, options = {}) {
+async function sendMessage(chatId, text, options = {}) {
   try {
-    const body = {
-      chat_id: chatId,
-      text: text,
-      parse_mode: "Markdown",
-      ...options
-    };
-
     const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "Markdown",
+        ...options
+      })
     });
-
+    
     return response.ok;
   } catch (error) {
-    console.error("Error sending message:", error);
+    console.error("❌ Error sending message:", error);
     return false;
   }
 }
 
-async function answerCallbackQuery(callbackId, text = "") {
+async function answerCallback(callbackId) {
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        callback_query_id: callbackId,
-        text: text,
-        show_alert: false
+        callback_query_id: callbackId
       })
     });
   } catch (error) {
-    console.error("Error answering callback:", error);
+    console.error("❌ Error answering callback:", error);
   }
+}
+
+/* ========== إدارة جلسات المستخدم ========== */
+function getSession(chatId) {
+  if (!userSessions.has(chatId)) {
+    userSessions.set(chatId, {
+      thinkingLevel: "medium",
+      category: "life",
+      questions: [],
+      answers: [],
+      createdAt: Date.now(),
+      stats: {
+        totalQuestions: 0,
+        totalAnswers: 0,
+        deepestLevel: "medium"
+      }
+    });
+  }
+  return userSessions.get(chatId);
 }
 
 /* ========== واجهات المستخدم ========== */
@@ -285,157 +293,91 @@ function getMainMenu() {
   return {
     inline_keyboard: [
       [
-        { text: "🎯 اختر مستوى التفكير", callback_data: "select_thinking" },
-        { text: "📚 اختر الفئة", callback_data: "select_category" }
+        { text: "🧠 اختيار مستوى التفكير", callback_data: "choose_level" },
+        { text: "📚 اختيار الفئة", callback_data: "choose_category" }
       ],
       [
-        { text: "🎲 سؤال عشوائي ذكي", callback_data: "smart_random" },
-        { text: "💭 اقترح سؤالاً عميقاً", callback_data: "suggest_deep" }
+        { text: "🎲 سؤال عشوائي عميق", callback_data: "random_deep" },
+        { text: "💭 سؤال من مستوى أعمق", callback_data: "deeper_level" }
       ],
       [
         { text: "📊 إحصائياتي", callback_data: "my_stats" },
-        { text: "❓ المساعدة", callback_data: "help" }
+        { text: "🔄 إعادة الضبط", callback_data: "reset" }
       ]
     ]
   };
 }
 
-function getThinkingLevelsMenu() {
-  const levels = Object.entries(THINKING_LEVELS);
+function getLevelsMenu() {
   const keyboard = [];
+  const levels = Object.entries(THINKING_LEVELS);
   
   for (let i = 0; i < levels.length; i += 2) {
     const row = [];
-    row.push({ text: levels[i][1].name, callback_data: `thinking_${levels[i][0]}` });
+    row.push({ 
+      text: levels[i][1].name, 
+      callback_data: `level_${levels[i][0]}` 
+    });
     
     if (i + 1 < levels.length) {
-      row.push({ text: levels[i + 1][1].name, callback_data: `thinking_${levels[i + 1][0]}` });
+      row.push({ 
+        text: levels[i + 1][1].name, 
+        callback_data: `level_${levels[i + 1][0]}` 
+      });
     }
     
     keyboard.push(row);
   }
   
-  keyboard.push([{ text: "🔙 رجوع", callback_data: "back_to_main" }]);
+  keyboard.push([{ text: "🔙 رجوع", callback_data: "back" }]);
   
   return { inline_keyboard: keyboard };
 }
 
 function getCategoriesMenu() {
-  const categories = Object.entries(QUESTION_CATEGORIES);
   const keyboard = [];
+  const categories = Object.entries(QUESTION_CATEGORIES);
   
-  for (let i = 0; i < categories.length; i += 3) {
+  for (let i = 0; i < categories.length; i += 2) {
     const row = [];
-    for (let j = 0; j < 3; j++) {
-      if (i + j < categories.length) {
-        row.push({ 
-          text: categories[i + j][1].split(' ')[0], // أول كلمة فقط
-          callback_data: `category_${categories[i + j][0]}`
-        });
-      }
+    row.push({ 
+      text: categories[i][1], 
+      callback_data: `cat_${categories[i][0]}` 
+    });
+    
+    if (i + 1 < categories.length) {
+      row.push({ 
+        text: categories[i + 1][1], 
+        callback_data: `cat_${categories[i + 1][0]}` 
+      });
     }
+    
     keyboard.push(row);
   }
   
-  keyboard.push([{ text: "🔙 رجوع", callback_data: "back_to_main" }]);
+  keyboard.push([{ text: "🔙 رجوع", callback_data: "back" }]);
   
   return { inline_keyboard: keyboard };
 }
 
-function getAfterAnswerMenu() {
+function getPostAnswerMenu() {
   return {
     inline_keyboard: [
       [
-        { text: "🔄 سؤال آخر", callback_data: "another_question" },
-        { text: "💡 غير مستوى التفكير", callback_data: "change_thinking" }
+        { text: "🔄 سؤال آخر", callback_data: "another" },
+        { text: "🧠 مستوى أعمق", callback_data: "go_deeper" }
       ],
       [
-        { text: "📝 غير الفئة", callback_data: "change_category" },
-        { text: "🧠 عمق أكثر", callback_data: "deeper_question" }
-      ],
-      [
-        { text: "🏠 القائمة الرئيسية", callback_data: "back_to_main" }
+        { text: "📚 فئة جديدة", callback_data: "new_category" },
+        { text: "🏠 القائمة", callback_data: "menu" }
       ]
     ]
   };
 }
 
-/* ========== إدارة حالة المستخدم ========== */
-function getUserState(chatId) {
-  if (!userStates.has(chatId)) {
-    userStates.set(chatId, {
-      thinkingLevel: "medium",
-      currentCategory: "philosophy",
-      questionsHistory: [],
-      answersHistory: [],
-      stats: {
-        questionsAnswered: 0,
-        deepQuestions: 0,
-        creativeQuestions: 0,
-        lastActive: Date.now()
-      }
-    });
-  }
-  return userStates.get(chatId);
-}
-
-async function sendQuestion(chatId, state, isDeeper = false) {
-  let thinkingLevel = state.thinkingLevel;
-  let category = state.currentCategory;
-  
-  if (isDeeper) {
-    // زيادة مستوى العمق
-    const levels = Object.keys(THINKING_LEVELS);
-    const currentIndex = levels.indexOf(thinkingLevel);
-    if (currentIndex < levels.length - 1) {
-      thinkingLevel = levels[currentIndex + 1];
-    }
-  }
-  
-  try {
-    // إظهار حالة التفكير
-    await sendTelegramMessage(chatId, "🤔 *جارٍ توليد سؤال عميق...*");
-    
-    const question = await generateQuestion(
-      category, 
-      thinkingLevel,
-      state.questionsHistory
-    );
-    
-    // تحديث الحالة
-    state.questionsHistory.push(question);
-    if (state.questionsHistory.length > 10) {
-      state.questionsHistory.shift();
-    }
-    
-    if (thinkingLevel === "deep" || thinkingLevel === "creative") {
-      state.stats.deepQuestions++;
-    }
-    
-    userStates.set(chatId, state);
-    
-    // إرسال السؤال
-    await sendTelegramMessage(
-      chatId,
-      `*${THINKING_LEVELS[thinkingLevel].name}*\n\n` +
-      `📚 الفئة: ${QUESTION_CATEGORIES[category]}\n\n` +
-      `❓ *السؤال:*\n${question}\n\n` +
-      "💭 *خُذ وقتك في التفكير، ثم اكتب إجابتك:*",
-      { reply_markup: getAfterAnswerMenu() }
-    );
-    
-  } catch (error) {
-    await sendTelegramMessage(
-      chatId,
-      "⚠️ حدث خطأ في توليد السؤال. حاول مرة أخرى.",
-      { reply_markup: getMainMenu() }
-    );
-  }
-}
-
 /* ========== المعالج الرئيسي ========== */
 export default async function handler(req, res) {
-  // تمكين CORS
+  // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -447,143 +389,256 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     return res.status(200).json({
       status: "✅ البوت يعمل",
-      users: userStates.size,
+      sessions: userSessions.size,
       cache: questionCache.size,
-      description: "لعبة أسئلة ذكية تعتمد على الذكاء الاصطناعي"
+      description: "لعبة أسئلة عميقة تعتمد 100% على الذكاء الاصطناعي"
     });
   }
 
   try {
     const update = req.body;
     
-    // معالجة الأزرار
+    // معالجة Callback Queries
     if (update.callback_query) {
       const callback = update.callback_query;
       const chatId = callback.message.chat.id;
-      const user = callback.from;
       const data = callback.data;
       
-      await answerCallbackQuery(callback.id);
+      await answerCallback(callback.id);
       
-      const state = getUserState(chatId);
+      const session = getSession(chatId);
       
       switch (data) {
-        case "back_to_main":
-          await sendTelegramMessage(
+        case "back":
+        case "menu":
+          await sendMessage(
             chatId,
-            "🏠 *القائمة الرئيسية*\n\n" +
-            "اختر أحد الخيارات للبدء:",
+            "🏠 *القائمة الرئيسية*\n\nاختر الخيار المناسب:",
             { reply_markup: getMainMenu() }
           );
           break;
           
-        case "select_thinking":
-          await sendTelegramMessage(
+        case "choose_level":
+          await sendMessage(
             chatId,
-            "🧠 *اختر مستوى التفكير*\n\n" +
+            "🧠 *اختر مستوى التفكير:*\n\n" +
             "كل مستوى يقدم أسئلة مختلفة في العمق والتعقيد:",
-            { reply_markup: getThinkingLevelsMenu() }
+            { reply_markup: getLevelsMenu() }
           );
           break;
           
-        case "select_category":
-          await sendTelegramMessage(
+        case "choose_category":
+          await sendMessage(
             chatId,
-            "📚 *اختر فئة الأسئلة*\n\n" +
-            "اختر الموضوع الذي تريد التحدث عنه:",
+            "📚 *اختر فئة الأسئلة:*\n\n" +
+            "اختر الموضوع الذي تريد استكشافه:",
             { reply_markup: getCategoriesMenu() }
           );
           break;
           
-        case "smart_random":
-          // فئة عشوائية
+        case "random_deep": {
+          // اختيار عشوائي للفئة
           const categories = Object.keys(QUESTION_CATEGORIES);
-          state.currentCategory = categories[Math.floor(Math.random() * categories.length)];
-          await sendQuestion(chatId, state);
-          break;
+          const randomCat = categories[Math.floor(Math.random() * categories.length)];
+          session.category = randomCat;
           
-        case "suggest_deep":
-          state.thinkingLevel = "deep";
-          state.currentCategory = "philosophy";
-          await sendQuestion(chatId, state);
+          try {
+            const question = await generateGeminiQuestion(
+              session.category,
+              session.thinkingLevel,
+              session.questions
+            );
+            
+            session.questions.push(question);
+            await sendMessage(
+              chatId,
+              `🎲 *سؤال عشوائي عميق*\n\n` +
+              `📚 الفئة: ${QUESTION_CATEGORIES[session.category]}\n` +
+              `🧠 المستوى: ${THINKING_LEVELS[session.thinkingLevel].name}\n\n` +
+              `❓ ${question}\n\n` +
+              `💭 *اكتب إجابتك الآن:*`,
+              { reply_markup: getPostAnswerMenu() }
+            );
+          } catch (error) {
+            await sendMessage(
+              chatId,
+              `❌ ${error.message}\n\n` +
+              `حاول مرة أخرى أو اختر خياراً آخر.`,
+              { reply_markup: getMainMenu() }
+            );
+          }
           break;
+        }
           
-        case "another_question":
-          await sendQuestion(chatId, state);
+        case "deeper_level": {
+          // زيادة مستوى العمق
+          const levels = Object.keys(THINKING_LEVELS);
+          const currentIndex = levels.indexOf(session.thinkingLevel);
+          if (currentIndex < levels.length - 1) {
+            session.thinkingLevel = levels[currentIndex + 1];
+            session.stats.deepestLevel = session.thinkingLevel;
+          }
+          
+          try {
+            const question = await generateGeminiQuestion(
+              session.category,
+              session.thinkingLevel,
+              session.questions
+            );
+            
+            session.questions.push(question);
+            await sendMessage(
+              chatId,
+              `🧠 *انتقلت لمستوى أعمق*\n\n` +
+              `📚 الفئة: ${QUESTION_CATEGORIES[session.category]}\n` +
+              `🎯 المستوى: ${THINKING_LEVELS[session.thinkingLevel].name}\n\n` +
+              `❓ ${question}\n\n` +
+              `💭 *خُذ وقتك في التفكير ثم اكتب إجابتك:*`,
+              { reply_markup: getPostAnswerMenu() }
+            );
+          } catch (error) {
+            await sendMessage(
+              chatId,
+              `❌ ${error.message}\n\n` +
+              `حاول مرة أخرى أو اختر مستوى أسهل.`,
+              { reply_markup: getMainMenu() }
+            );
+          }
           break;
+        }
           
-        case "deeper_question":
-          await sendQuestion(chatId, state, true);
+        case "another": {
+          try {
+            const question = await generateGeminiQuestion(
+              session.category,
+              session.thinkingLevel,
+              session.questions
+            );
+            
+            session.questions.push(question);
+            await sendMessage(
+              chatId,
+              `❓ ${question}\n\n` +
+              `💭 *اكتب إجابتك الآن:*`,
+              { reply_markup: getPostAnswerMenu() }
+            );
+          } catch (error) {
+            await sendMessage(
+              chatId,
+              `❌ ${error.message}\n\n` +
+              `حاول مرة أخرى.`,
+              { reply_markup: getMainMenu() }
+            );
+          }
           break;
+        }
           
-        case "change_thinking":
-          await sendTelegramMessage(
+        case "go_deeper": {
+          // زيادة مستوى العمق مع سؤال جديد
+          const levels = Object.keys(THINKING_LEVELS);
+          const currentIndex = levels.indexOf(session.thinkingLevel);
+          if (currentIndex < levels.length - 1) {
+            session.thinkingLevel = levels[currentIndex + 1];
+            session.stats.deepestLevel = session.thinkingLevel;
+          }
+          
+          try {
+            const question = await generateGeminiQuestion(
+              session.category,
+              session.thinkingLevel,
+              session.questions
+            );
+            
+            session.questions.push(question);
+            await sendMessage(
+              chatId,
+              `🧠 *سؤال من مستوى أعمق*\n\n` +
+              `❓ ${question}\n\n` +
+              `💭 *تأمل جيداً ثم اكتب إجابتك:*`,
+              { reply_markup: getPostAnswerMenu() }
+            );
+          } catch (error) {
+            await sendMessage(
+              chatId,
+              `❌ ${error.message}\n\n` +
+              `حاول مرة أخرى أو اختر مستوى أسهل.`,
+              { reply_markup: getMainMenu() }
+            );
+          }
+          break;
+        }
+          
+        case "new_category":
+          await sendMessage(
             chatId,
-            "🔄 *تغيير مستوى التفكير*\n\n" +
-            "اختر المستوى الجديد:",
-            { reply_markup: getThinkingLevelsMenu() }
-          );
-          break;
-          
-        case "change_category":
-          await sendTelegramMessage(
-            chatId,
-            "🔄 *تغيير الفئة*\n\n" +
-            "اختر الفئة الجديدة:",
+            "📚 *اختر فئة جديدة:*",
             { reply_markup: getCategoriesMenu() }
           );
           break;
           
-        case "my_stats":
-          const statsText = `📊 *إحصائياتك*\n\n` +
-            `• الأسئلة المجاب عنها: ${state.stats.questionsAnswered}\n` +
-            `• الأسئلة العميقة: ${state.stats.deepQuestions}\n` +
-            `• الأسئلة الإبداعية: ${state.stats.creativeQuestions}\n` +
-            `\n💭 *حالتك الحالية:*\n` +
-            `• مستوى التفكير: ${THINKING_LEVELS[state.thinkingLevel].name}\n` +
-            `• الفئة: ${QUESTION_CATEGORIES[state.currentCategory]}\n\n` +
-            `استمر في التفكير والنمو!`;
+        case "my_stats": {
+          const statsText = `📊 *إحصائيات جلستك*\n\n` +
+            `• الأسئلة: ${session.questions.length}\n` +
+            `• الإجابات: ${session.answers.length}\n` +
+            `• أعمق مستوى وصلت إليه: ${THINKING_LEVELS[session.stats.deepestLevel].name}\n` +
+            `• الفئة الحالية: ${QUESTION_CATEGORIES[session.category]}\n` +
+            `• المستوى الحالي: ${THINKING_LEVELS[session.thinkingLevel].name}\n\n` +
+            `🎯 *استمر في استكشاف أعماق تفكيرك*`;
           
-          await sendTelegramMessage(chatId, statsText);
+          await sendMessage(chatId, statsText);
           break;
+        }
           
-        case "help":
-          await sendTelegramMessage(
+        case "reset":
+          userSessions.delete(chatId);
+          await sendMessage(
             chatId,
-            "❓ *كيفية اللعب*\n\n" +
-            "1. اختر مستوى التفكير (خفيف/متوسط/عميق)\n" +
-            "2. اختر فئة الأسئلة\n" +
-            "3. اقرأ السؤال بعناية\n" +
-            "4. خذ وقتك في التفكير\n" +
-            "5. اكتب إجابتك\n" +
-            "6. احصل على رد ذكي\n\n" +
-            "✨ *نصائح:*\n" +
-            "• خذ وقتك، التفكير العميق يحتاج صبراً\n" +
-            "• جرب مستويات تفكير مختلفة\n" +
-            "• لا توجد إجابات صحيحة أو خاطئة\n" +
-            "• استمتع بعملية التفكير نفسها\n\n" +
-            "🧠 *مستويات التفكير:*\n" +
-            Object.entries(THINKING_LEVELS).map(([key, value]) => 
-              `• ${value.name}: ${value.prompt}`
-            ).join('\n')
+            "🔄 *تم إعادة الضبط*\n\n" +
+            "جلستك الجديدة جاهزة. اختر مستوى التفكير:",
+            { reply_markup: getLevelsMenu() }
           );
           break;
           
         default:
-          if (data.startsWith("thinking_")) {
-            const level = data.replace("thinking_", "");
-            state.thinkingLevel = level;
-            await sendTelegramMessage(
+          if (data.startsWith("level_")) {
+            const level = data.replace("level_", "");
+            session.thinkingLevel = level;
+            
+            await sendMessage(
               chatId,
               `✅ تم اختيار: ${THINKING_LEVELS[level].name}\n\n` +
-              "الآن اختر فئة الأسئلة:",
+              `الآن اختر فئة الأسئلة:`,
               { reply_markup: getCategoriesMenu() }
             );
           }
-          else if (data.startsWith("category_")) {
-            const category = data.replace("category_", "");
-            state.currentCategory = category;
-            await sendQuestion(chatId, state);
+          else if (data.startsWith("cat_")) {
+            const category = data.replace("cat_", "");
+            session.category = category;
+            
+            try {
+              const question = await generateGeminiQuestion(
+                session.category,
+                session.thinkingLevel,
+                session.questions
+              );
+              
+              session.questions.push(question);
+              await sendMessage(
+                chatId,
+                `📚 *${QUESTION_CATEGORIES[session.category]}*\n` +
+                `🧠 *${THINKING_LEVELS[session.thinkingLevel].name}*\n\n` +
+                `❓ ${question}\n\n` +
+                `💭 *اكتب إجابتك الآن:*`,
+                { reply_markup: getPostAnswerMenu() }
+              );
+            } catch (error) {
+              await sendMessage(
+                chatId,
+                `❌ ${error.message}\n\n` +
+                `حاول اختيار فئة أو مستوى مختلف.`,
+                { reply_markup: getMainMenu() }
+              );
+            }
           }
           break;
       }
@@ -598,65 +653,66 @@ export default async function handler(req, res) {
       const text = message.text || "";
       const user = message.from;
       
-      // بدء البوت
+      // أمر /start
       if (text.startsWith("/start")) {
-        const welcomeText = `🧠 *مرحباً ${user.first_name || "صديقي"}!*\n\n` +
-          "أهلاً بك في *لعبة التفكير العميق*\n\n" +
-          "🎯 *مميزات اللعبة:*\n" +
-          "• أسئلة ذكية بتدرج في العمق\n" +
-          "• ردود ذكية مخصصة\n" +
-          "• مستويات تفكير مختلفة\n" +
-          "• فئات متنوعة من الأسئلة\n" +
-          "• نظام إحصائيات متقدم\n\n" +
-          "💭 *خذ وقتك في التفكير* - لا تستعجل في الإجابات\n\n" +
-          "اختر نقطة البداية:";
+        const welcomeMessage = `🧠 *مرحباً ${user.first_name || "صديقي"}!*\n\n` +
+          `*لعبة الأسئلة العميقة*\n\n` +
+          `🔍 *مميزات اللعبة:*\n` +
+          `• أسئلة ذكية 100% من الذكاء الاصطناعي\n` +
+          `• 5 مستويات مختلفة للتفكير\n` +
+          `• 10 فئات متنوعة من الأسئلة\n` +
+          `• ردود ذكية مخصصة لكل إجابة\n` +
+          `• نظام تتبع للإحصائيات\n\n` +
+          `💭 *نصيحة:* خذ وقتك في التفكير، لا تستعجل الإجابة.\n\n` +
+          `اختر نقطة البداية:`;
         
-        await sendTelegramMessage(chatId, welcomeText, { reply_markup: getMainMenu() });
+        await sendMessage(chatId, welcomeMessage, { 
+          reply_markup: getMainMenu() 
+        });
         return res.status(200).end();
       }
       
       // إجابة المستخدم على سؤال
-      const state = getUserState(chatId);
-      if (state.questionsHistory.length > 0 && text && !text.startsWith("/")) {
-        const lastQuestion = state.questionsHistory[state.questionsHistory.length - 1];
+      const session = getSession(chatId);
+      if (session.questions.length > 0 && text && !text.startsWith("/")) {
+        const lastQuestion = session.questions[session.questions.length - 1];
         
-        // تحديث الإحصائيات
-        state.stats.questionsAnswered++;
-        state.answersHistory.push({
+        // حفظ الإجابة
+        session.answers.push({
           question: lastQuestion,
           answer: text,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          level: session.thinkingLevel
         });
         
-        if (state.answersHistory.length > 20) {
-          state.answersHistory.shift();
-        }
+        // تحديث الإحصائيات
+        session.stats.totalAnswers++;
         
-        // إرسال رد ذكي
-        await sendTelegramMessage(
-          chatId,
-          "🤔 *جارٍ تحليل إجابتك...*"
+        // توليد رد ذكي
+        await sendMessage(chatId, "🤔 *جارٍ تحليل إجابتك...*");
+        
+        const smartResponse = await generateGeminiResponse(
+          text,
+          lastQuestion,
+          session.thinkingLevel
         );
         
-        const smartReply = await generateSmartResponse(lastQuestion, text);
-        
-        await sendTelegramMessage(
+        await sendMessage(
           chatId,
-          `✨ *تحليلك الشخصي:*\n\n${smartReply}\n\n` +
-          "💭 *ماذا تريد الآن؟*",
-          { reply_markup: getAfterAnswerMenu() }
+          `✨ *تحليلك الشخصي*\n\n${smartResponse}\n\n` +
+          `💭 *ماذا تريد الآن؟*`,
+          { reply_markup: getPostAnswerMenu() }
         );
         
-        userStates.set(chatId, state);
         return res.status(200).end();
       }
       
-      // رسالة عادية بدون سياق
+      // أي رسالة أخرى
       if (text && !text.startsWith("/")) {
-        await sendTelegramMessage(
+        await sendMessage(
           chatId,
-          "🧠 *لعبة التفكير العميق*\n\n" +
-          "اكتب /start للبدء، أو اختر من القائمة أدناه:",
+          "🧠 *لعبة الأسئلة العميقة*\n\n" +
+          "اكتب /start للبدء في رحلة التفكير العميق.",
           { reply_markup: getMainMenu() }
         );
       }
@@ -665,10 +721,10 @@ export default async function handler(req, res) {
     return res.status(200).end();
     
   } catch (error) {
-    console.error("Handler error:", error);
+    console.error("❌ Handler error:", error);
     return res.status(200).json({ 
       ok: false,
-      error: "حدث خطأ داخلي"
+      error: "حدث خطأ في الخادم"
     });
   }
 }
