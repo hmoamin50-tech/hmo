@@ -4,27 +4,10 @@ import fetch from "node-fetch";
 /* ========== الإعدادات ========== */
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ADMIN_ID = process.env.ADMIN_ID;
+const ADMIN_ID = process.env.ADMIN_ID || "none";
 
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-
-/* ========== Rate Limit ========== */
-let requestCount = 0;
-let lastReset = Date.now();
-const LIMIT = 20;
-const RESET_TIME = 60 * 1000;
-
-function checkRateLimit() {
-  const now = Date.now();
-  if (now - lastReset > RESET_TIME) {
-    requestCount = 0;
-    lastReset = now;
-  }
-  if (requestCount >= LIMIT) return false;
-  requestCount++;
-  return true;
-}
 
 /* ========== أنواع اللعبة ========== */
 const GAME_TYPES = {
@@ -41,7 +24,7 @@ const GAME_TYPES = {
 /* ========== حالة المستخدم ========== */
 const userState = new Map(); // chatId => { type, question, userId }
 
-/* ========== الأسئلة الافتراضية (في حالة فشل Gemini) ========== */
+/* ========== الأسئلة الافتراضية ========== */
 const DEFAULT_QUESTIONS = {
   comedy: [
     "إذا كنت ستتحول إلى حيوان ليوم واحد، فماذا تختار ولماذا؟",
@@ -101,27 +84,84 @@ const DEFAULT_QUESTIONS = {
   ]
 };
 
-/* ========== Gemini ========== */
+/* ========== الردود على الإجابات ========== */
+const RESPONSES = [
+  "💫 إجابة رائعة!",
+  "🎯 نقطة مهمة!",
+  "🌟 شكراً لمشاركتك!",
+  "✨ إجابة مميزة!",
+  "💭 تفكير جميل!",
+  "🎨 إجابة إبداعية!",
+  "💝 شكراً لصراحتك!",
+  "🚀 رد ممتاز!",
+  "🌺 جميل ما تقول!",
+  "💡 فكرة رائعة!",
+  "🤝 شكراً للثقة!",
+  "🌅 إجابة مشرقة!",
+  "🎭 تعليق جميل!",
+  "💎 إجابة ثمينة!",
+  "🌸 شكراً لمشاركتنا مشاعرك!"
+];
+
+function getRandomResponse() {
+  const randomIndex = Math.floor(Math.random() * RESPONSES.length);
+  return RESPONSES[randomIndex];
+}
+
+/* ========== Telegram Helpers ========== */
+async function sendMessage(chatId, text, extra = {}) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "Markdown",
+        ...extra
+      })
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to send message: ${response.status}`);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error("Error sending message:", error);
+  }
+}
+
+async function answerCallbackQuery(callbackQueryId, text = "", showAlert = false) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text,
+        show_alert: showAlert
+      })
+    });
+  } catch (error) {
+    console.error("Error answering callback query:", error);
+  }
+}
+
+/* ========== توليد الأسئلة من Gemini ========== */
 function buildPrompt(typeName) {
-  return `
-أنت مولد أسئلة للعبة دردشة تفاعلية.
+  return `أنت مولد أسئلة للعبة أسئلة وأجوبة. 
 أنشئ سؤالاً واحداً فقط.
 نوع السؤال: ${typeName}
-الشروط:
-- سؤال واحد فقط
-- بدون ترقيم
-- بدون شرح
-- قصير وجذاب
-- مناسب للعبة مع الأصدقاء
-- باللغة العربية الفصحى أو العامية
-`;
+اللغة: العربية
+السؤال يجب أن يكون:
+- قصيراً (جملة واحدة)
+- واضحاً وسهلاً
+- مناسباً للعبة جماعية
+- محفزاً للتفكير أو النقاش`;
 }
 
 async function getGeminiResponse(promptText) {
-  if (!checkRateLimit()) {
-    throw new Error("RATE_LIMIT");
-  }
-
   try {
     const response = await fetch(GEMINI_API_URL, {
       method: "POST",
@@ -138,111 +178,13 @@ async function getGeminiResponse(promptText) {
       })
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error("Gemini API Error:", error);
-      throw new Error("GEMINI_ERROR");
-    }
-
     const data = await response.json();
     const question = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!question || question.trim().length < 5) {
-      throw new Error("INVALID_QUESTION");
-    }
-    
-    return question.trim();
+    return question || null;
   } catch (error) {
-    console.error("Error in getGeminiResponse:", error);
-    throw error;
-  }
-}
-
-/* ========== Telegram Helpers ========== */
-async function sendMessage(chatId, text, extra = {}) {
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: "Markdown",
-        ...extra
-      })
-    });
-  } catch (error) {
-    console.error("Error sending message:", error);
-  }
-}
-
-async function sendTyping(chatId) {
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendChatAction`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        action: "typing"
-      })
-    });
-  } catch (error) {
-    console.error("Error sending typing:", error);
-  }
-}
-
-/* ========== أزرار القائمة ========== */
-function gameMenu() {
-  const types = Object.entries(GAME_TYPES);
-  const keyboard = [];
-  
-  // ترتيب الأزرار في صفين
-  for (let i = 0; i < types.length; i += 2) {
-    const row = [];
-    row.push({ text: types[i][1], callback_data: `game_${types[i][0]}` });
-    
-    if (i + 1 < types.length) {
-      row.push({ text: types[i + 1][1], callback_data: `game_${types[i + 1][0]}` });
-    }
-    
-    keyboard.push(row);
-  }
-  
-  return keyboard;
-}
-
-/* ========== أزرار بعد السؤال ========== */
-function afterQuestionButtons() {
-  return [
-    [
-      { text: "🔄 سؤال آخر", callback_data: "next_q" },
-      { text: "🔙 تغيير النوع", callback_data: "back_menu" }
-    ]
-  ];
-}
-
-/* ========== إرسال للأدمن ========== */
-async function sendToAdmin(user, question, answer) {
-  try {
-    if (!ADMIN_ID) return; // إذا لم يتم تعيين ID الأدمن
-    
-    const msg = `
-📥 *لعبة الأسئلة*
-
-👤 المستخدم:
-${user.first_name || ""} ${user.last_name || ""}
-@${user.username || "—"}
-ID: ${user.id}
-
-❓ السؤال:
-${question}
-
-💬 الإجابة:
-${answer}
-`;
-    await sendMessage(ADMIN_ID, msg);
-  } catch (error) {
-    console.error("Error sending to admin:", error);
+    console.error("Gemini API error:", error);
+    return null;
   }
 }
 
@@ -252,12 +194,66 @@ async function generateQuestion(typeKey) {
   
   try {
     const prompt = buildPrompt(typeName);
-    return await getGeminiResponse(prompt);
+    const question = await getGeminiResponse(prompt);
+    
+    if (question && question.length > 5) {
+      return question.trim();
+    }
   } catch (error) {
-    // استخدام الأسئلة الافتراضية إذا فشل Gemini
-    const questions = DEFAULT_QUESTIONS[typeKey] || DEFAULT_QUESTIONS.comedy;
-    const randomIndex = Math.floor(Math.random() * questions.length);
-    return questions[randomIndex];
+    console.error("Error generating question:", error);
+  }
+  
+  // استخدم الأسئلة الافتراضية إذا فشل Gemini
+  const questions = DEFAULT_QUESTIONS[typeKey] || DEFAULT_QUESTIONS.comedy;
+  const randomIndex = Math.floor(Math.random() * questions.length);
+  return questions[randomIndex];
+}
+
+/* ========== أزرار القائمة ========== */
+function gameMenu() {
+  const keyboard = [
+    [{ text: "😂 كوميديا", callback_data: "game_comedy" }, { text: "🔥 صراحة", callback_data: "game_truth" }],
+    [{ text: "🗣️ بدون حواجز", callback_data: "game_free" }, { text: "❤️ غرامية", callback_data: "game_love" }],
+    [{ text: "💞 للعشاق", callback_data: "game_couples" }, { text: "🤣 مضحكة", callback_data: "game_funny" }],
+    [{ text: "📔 يوميات", callback_data: "game_daily" }, { text: "🧠 شخصية", callback_data: "game_personality" }],
+    [{ text: "❓ تلقائي", callback_data: "game_random" }]
+  ];
+  
+  return keyboard;
+}
+
+/* ========== أزرار بعد السؤال ========== */
+function afterQuestionButtons() {
+  return [
+    [{ text: "🔄 سؤال جديد", callback_data: "next_question" }],
+    [{ text: "🔙 أنواع أخرى", callback_data: "change_type" }]
+  ];
+}
+
+/* ========== إرسال للأدمن ========== */
+async function sendToAdmin(user, question, answer) {
+  try {
+    if (!ADMIN_ID || ADMIN_ID === "none") {
+      return;
+    }
+    
+    const msg = `
+📥 *إجابة جديدة*
+
+👤 *المستخدم:*
+${user.first_name || ""} ${user.last_name || ""}
+@${user.username || "لا يوجد"}
+🆔 ${user.id}
+
+❓ *السؤال:*
+${question}
+
+💬 *الإجابة:*
+${answer}
+`;
+    await sendMessage(ADMIN_ID, msg);
+  } catch (error) {
+    console.error("Error sending to admin:", error);
   }
 }
 
@@ -274,35 +270,60 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     return res.status(200).json({ 
-      status: "OK",
-      bot: "لعبة الأسئلة التفاعلية",
-      active_users: userState.size,
-      rate_limit: `${requestCount}/${LIMIT}`
+      status: "✅ البوت يعمل",
+      bot_name: "لعبة الأسئلة التفاعلية",
+      game_types: Object.keys(GAME_TYPES).length,
+      active_users: userState.size
     });
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "الطريقة غير مسموحة" });
   }
 
   try {
     const update = req.body;
+    
+    // توثيق الطلبات الواردة
+    console.log("📨 Update received:", update);
 
     /* ====== معالجة أزرار Inline ====== */
     if (update.callback_query) {
-      const callbackQuery = update.callback_query;
-      const chatId = callbackQuery.message.chat.id;
-      const user = callbackQuery.from;
-      const data = callbackQuery.data;
+      const callback = update.callback_query;
+      const chatId = callback.message.chat.id;
+      const user = callback.from;
+      const data = callback.data;
 
-      await sendTyping(chatId);
+      console.log(`🔘 Callback: ${data} from ${user.id}`);
 
-      // اختيار نوع اللعبة
-      if (data.startsWith("game_")) {
+      // إجابة فورية للزر
+      await answerCallbackQuery(callback.id, "جارٍ التحميل...");
+
+      // اختيار نوع عشوائي
+      if (data === "game_random") {
+        const types = Object.keys(GAME_TYPES);
+        const randomType = types[Math.floor(Math.random() * types.length)];
+        const question = await generateQuestion(randomType);
+        
+        userState.set(chatId, { 
+          type: randomType, 
+          question: question,
+          userId: user.id 
+        });
+
+        await sendMessage(chatId, `🎲 *سؤال عشوائي*\n\n❓ ${question}\n\n💭 الآن اكتب إجابتك:`, {
+          reply_markup: {
+            inline_keyboard: afterQuestionButtons()
+          }
+        });
+      }
+      
+      // اختيار نوع محدد
+      else if (data.startsWith("game_")) {
         const typeKey = data.replace("game_", "");
         
         if (!GAME_TYPES[typeKey]) {
-          await sendMessage(chatId, "⚠️ نوع اللعبة غير صحيح");
+          await sendMessage(chatId, "⚠️ هذا النوع غير متوفر حالياً");
           return res.status(200).end();
         }
 
@@ -314,28 +335,19 @@ export default async function handler(req, res) {
           userId: user.id 
         });
 
-        await sendMessage(chatId, `*${GAME_TYPES[typeKey]}*\n\n❓ ${question}`, {
+        await sendMessage(chatId, `*${GAME_TYPES[typeKey]}*\n\n❓ ${question}\n\n💭 الآن اكتب إجابتك في الرسالة التالية:`, {
           reply_markup: {
             inline_keyboard: afterQuestionButtons()
           }
         });
-
-        // إرسال إشعار الضغط
-        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            callback_query_id: callbackQuery.id
-          })
-        });
       }
 
-      // سؤال آخر من نفس النوع
-      else if (data === "next_q") {
+      // سؤال آخر
+      else if (data === "next_question") {
         const state = userState.get(chatId);
         
         if (!state) {
-          await sendMessage(chatId, "⚠️ لا توجد لعبة نشطة. ابدأ بالضغط على /start");
+          await sendMessage(chatId, "⚠️ ابدأ اللعبة أولاً بالضغط على /start");
           return res.status(200).end();
         }
 
@@ -344,35 +356,19 @@ export default async function handler(req, res) {
         state.question = question;
         userState.set(chatId, state);
 
-        await sendMessage(chatId, `❓ ${question}`, {
+        await sendMessage(chatId, `❓ ${question}\n\n💭 اكتب إجابتك:`, {
           reply_markup: {
             inline_keyboard: afterQuestionButtons()
           }
         });
-
-        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            callback_query_id: callbackQuery.id
-          })
-        });
       }
 
-      // الرجوع للقائمة الرئيسية
-      else if (data === "back_menu") {
-        await sendMessage(chatId, "🎮 *اختر نوع اللعبة:*", {
+      // تغيير النوع
+      else if (data === "change_type") {
+        await sendMessage(chatId, "🎮 *اختر نوع اللعبة:*\n\nأي نوع تفضل؟", {
           reply_markup: {
             inline_keyboard: gameMenu()
           }
-        });
-
-        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            callback_query_id: callbackQuery.id
-          })
         });
       }
 
@@ -389,25 +385,35 @@ export default async function handler(req, res) {
     const text = message.text || "";
     const user = message.from;
 
-    // أمر /start
-    if (text === "/start") {
-      await sendMessage(chatId, "🎮 *مرحباً بك في لعبة الأسئلة التفاعلية!*\n\nاختر نوع الأسئلة الذي تريد:", {
-        reply_markup: {
-          inline_keyboard: gameMenu()
-        }
-      });
-      
-      return res.status(200).end();
-    }
+    console.log(`💬 Message: "${text}" from ${user.id}`);
 
-    // أمر /help
-    if (text === "/help") {
-      await sendMessage(chatId, "📖 *كيفية اللعب:*\n\n1. اختر نوع الأسئلة من القائمة\n2. اقرأ السؤال وأجب عليه\n3. يمكنك طلب سؤال آخر أو تغيير النوع\n4. إجاباتك تصل للإدمن للتحليل\n\n📌 أوامر:\n/start - بدء اللعبة\n/menu - عرض القائمة");
+    // أمر /start
+    if (text === "/start" || text === "/start@") {
+      await sendMessage(
+        chatId,
+        `🎮 *مرحباً ${user.first_name || "صديقي"}!*\n\n` +
+        `*لعبة الأسئلة التفاعلية*\n\n` +
+        `اختر نوع الأسئلة المناسب لك:\n` +
+        `• 💬 شارك أفكارك\n` +
+        `• 🤔 فكر في الإجابات\n` +
+        `• 😄 استمتع باللعبة\n\n` +
+        `*كيفية اللعب:*\n` +
+        `1️⃣ اختر نوع الأسئلة\n` +
+        `2️⃣ اقرأ السؤال\n` +
+        `3️⃣ اكتب إجابتك\n` +
+        `4️⃣ احصل على رد\n` +
+        `5️⃣ كرر أو غير النوع`,
+        {
+          reply_markup: {
+            inline_keyboard: gameMenu()
+          }
+        }
+      );
       return res.status(200).end();
     }
 
     // أمر /menu
-    if (text === "/menu") {
+    if (text === "/menu" || text === "/help") {
       await sendMessage(chatId, "🎮 *اختر نوع اللعبة:*", {
         reply_markup: {
           inline_keyboard: gameMenu()
@@ -416,18 +422,20 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    // معالجة إجابة المستخدم
+    // إجابة المستخدم على سؤال
     const state = userState.get(chatId);
     if (state && text && !text.startsWith("/")) {
-      await sendTyping(chatId);
-      
       // إرسال الإجابة للإدمن
       await sendToAdmin(user, state.question, text);
       
-      // رد على المستخدم
+      // إرسال رد للمستخدم
+      const randomResponse = getRandomResponse();
       await sendMessage(
         chatId,
-        "✅ *تم تسجيل إجابتك!*\n\nاضغط على زر 🔄 لسؤال آخر أو غيّر النوع:",
+        `${randomResponse}\n\n` +
+        `📝 *سؤالك:* ${state.question}\n` +
+        `📤 *إجابتك:* ${text}\n\n` +
+        `✨ *ماذا تريد الآن؟*`,
         {
           reply_markup: {
             inline_keyboard: afterQuestionButtons()
@@ -438,16 +446,25 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
-    // إذا كتب رسالة عادية بدون لعبة نشطة
+    // إذا كتب رسالة بدون لعبة نشطة
     if (text && !text.startsWith("/")) {
-      await sendMessage(chatId, "🎮 *ابدأ اللعبة أولاً بالضغط على /start*");
+      await sendMessage(
+        chatId,
+        "🎮 *لم تبدأ اللعبة بعد!*\n\n" +
+        "اضغط /start لبدء لعبة الأسئلة أو اختر نوعاً من القائمة أدناه:",
+        {
+          reply_markup: {
+            inline_keyboard: gameMenu()
+          }
+        }
+      );
       return res.status(200).end();
     }
 
     return res.status(200).end();
 
   } catch (error) {
-    console.error("Handler error:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("❌ Handler error:", error);
+    return res.status(200).json({ error: "حدث خطأ داخلي" });
   }
 }
