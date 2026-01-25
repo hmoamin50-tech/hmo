@@ -1,34 +1,31 @@
-// api/webhook.js
-module.exports = async (req, res) => {
-  // 1. التحقق من الـ Webhook (GET Request)
-  if (req.method === 'GET') {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+export default async function handler(req, res) {
+    // عملية التحقق (Verification) - تطلبها Meta عند الحفظ لأول مرة
+    if (req.method === 'GET') {
+        const verify_token = '6edeee6dea04939dfe8b272ba309372a'; // يجب أن تطابق ما ستكتبه في خانة "تحقق من الرمز"
+        
+        const mode = req.query['hub.mode'];
+        const token = req.query['hub.verify_token'];
+        const challenge = req.query['hub.challenge'];
 
-    // ضع كلمة سر خاصة بك هنا (Verify Token)
-    const MY_VERIFY_TOKEN = '6edeee6dea04939dfe8b272ba309372a'; 
-
-    if (mode && token === MY_VERIFY_TOKEN) {
-      return res.status(200).send(challenge);
-    } else {
-      return res.status(403).send('Forbidden');
+        if (mode && token) {
+            if (mode === 'subscribe' && token === verify_token) {
+                return res.status(200).send(challenge);
+            } else {
+                return res.status(403).end();
+            }
+        }
     }
-  }
 
-  // 2. استقبال البيانات (POST Request)
-  if (req.method === 'POST') {
-    const body = req.body;
+    // استقبال الرسائل (POST)
+    if (req.method === 'POST') {
+        const body = req.body;
 
-    if (body.object === 'page' || body.object === 'instagram') {
-      console.log('Received Webhook:', JSON.stringify(body, null, 2));
-      
-      // هنا يمكنك استخدام الـ Access Token الخاص بك للرد على الرسائل
-      // مثال: sendAction(body.entry[0].messaging[0].sender.id, "Hello!");
-
-      return res.status(200).send('EVENT_RECEIVED');
-    } else {
-      return res.status(404).end();
+        if (body.object === 'whatsapp_business_account') {
+            // هنا تصلك بيانات الرسائل، يمكنك استخدام الـ Access Token لإرسال رد
+            console.log("رسالة جديدة واصلة:", JSON.stringify(body, null, 2));
+            return res.status(200).send('EVENT_RECEIVED');
+        } else {
+            return res.status(404).end();
+        }
     }
-  }
-};
+}
