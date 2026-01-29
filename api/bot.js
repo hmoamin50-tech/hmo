@@ -1,31 +1,39 @@
+import fetch from "node-fetch";
+
 export default async function handler(req, res) {
-    // عملية التحقق (Verification) - تطلبها Meta عند الحفظ لأول مرة
-    if (req.method === 'GET') {
-        const verify_token = '6edeee6dea04939dfe8b272ba309372a'; // يجب أن تطابق ما ستكتبه في خانة "تحقق من الرمز"
-        
-        const mode = req.query['hub.mode'];
-        const token = req.query['hub.verify_token'];
-        const challenge = req.query['hub.challenge'];
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
-        if (mode && token) {
-            if (mode === 'subscribe' && token === verify_token) {
-                return res.status(200).send(challenge);
-            } else {
-                return res.status(403).end();
-            }
-        }
+  try {
+    const { message } = req.body;
+
+    // تأكد من وضع التوكن والـ chat ID هنا
+    const BOT_TOKEN = process.env.BOT_TOKEN;
+    const CHAT_ID = process.env.CHAT_ID;
+
+    if (!BOT_TOKEN || !CHAT_ID) {
+      return res.status(500).json({ error: "Missing BOT_TOKEN or CHAT_ID" });
     }
 
-    // استقبال الرسائل (POST)
-    if (req.method === 'POST') {
-        const body = req.body;
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
 
-        if (body.object === 'whatsapp_business_account') {
-            // هنا تصلك بيانات الرسائل، يمكنك استخدام الـ Access Token لإرسال رد
-            console.log("رسالة جديدة واصلة:", JSON.stringify(body, null, 2));
-            return res.status(200).send('EVENT_RECEIVED');
-        } else {
-            return res.status(404).end();
-        }
-    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text: message || "📩 Hello from Vercel Telegram Bot!",
+      }),
+    });
+
+    const data = await response.json();
+
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
 }
