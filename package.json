@@ -8,5 +8,8 @@
     "start": "node api/bot.js",
     "setup-webhook": "node setup-webhook.js"
   },
-  "dependencies": {}
+   "dependencies": {
+    "@google/generative-ai": "^0.x.x",
+    "node-fetch": "^3.x.x"
+  }
 }
