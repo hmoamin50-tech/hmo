@@ -1,39 +1,39 @@
-import fetch from "node-fetch";
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return res.status(200).send("OK");
   }
 
-  try {
-    const { message } = req.body;
+  const BOT_TOKEN = process.env.BOT_TOKEN;
+  const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-    // تأكد من وضع التوكن والـ chat ID هنا
-    const BOT_TOKEN = process.env.BOT_TOKEN;
-    const CHAT_ID = process.env.CHAT_ID;
+  const update = req.body;
 
-    if (!BOT_TOKEN || !CHAT_ID) {
-      return res.status(500).json({ error: "Missing BOT_TOKEN or CHAT_ID" });
-    }
-
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: CHAT_ID,
-        text: message || "📩 Hello from Vercel Telegram Bot!",
-      }),
-    });
-
-    const data = await response.json();
-
-    return res.status(200).json(data);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Internal Server Error" });
+  // لو ما فيه رسالة
+  if (!update.message) {
+    return res.status(200).send("No message");
   }
+
+  const chatId = update.message.chat.id;
+  const text = update.message.text;
+
+  let reply = "👋 أهلًا! اكتب أي شيء.";
+
+  if (text === "/start") {
+    reply = "✅ البوت شغّال!\nاكتب أي رسالة.";
+  } else if (text.toLowerCase() === "hi") {
+    reply = "😄 هلا والله!";
+  } else if (text === "هلا") {
+    reply = "👋 أهلين وسهلين";
+  }
+
+  await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: reply,
+    }),
+  });
+
+  return res.status(200).send("OK");
 }
