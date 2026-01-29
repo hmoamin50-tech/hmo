@@ -2,14 +2,8 @@
   "name": "telegram-gemini-bot",
   "version": "1.0.0",
   "type": "module",
-  "description": "Telegram Bot with Gemini AI using Webhook",
-  "main": "api/bot.js",
-  "scripts": {
-    "start": "node api/bot.js",
-    "setup-webhook": "node setup-webhook.js"
-  },
-   "dependencies": {
-    "@google/generative-ai": "^0.x.x",
-    "node-fetch": "^3.x.x"
+  "dependencies": {
+    "node-telegram-bot-api": "^0.61.0",
+    "dotenv": "^16.4.5"
   }
 }
