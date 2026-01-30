@@ -1,10 +1,11 @@
-// api/index.js
-
 import TelegramBot from "node-telegram-bot-api";
 
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// Vercel Webhook Handler
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(msg.chat.id, "أهلاً 👋 البوت شغال على Vercel");
+});
+
 export default async function handler(req, res) {
   if (req.method === "POST") {
     await bot.processUpdate(req.body);
@@ -13,8 +14,3 @@ export default async function handler(req, res) {
 
   res.status(200).send("Bot is running ✅");
 }
-
-// أمر /start فقط
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "أهلاً 👋");
-});
