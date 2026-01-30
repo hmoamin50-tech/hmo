@@ -1,125 +1,153 @@
 import TelegramBot from "node-telegram-bot-api";
 
-// التحقق من وجود مفاتيح API
-if (!process.env.BOT_TOKEN) {
-  console.error("❌ BOT_TOKEN غير موجود!");
-}
-if (!process.env.GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY غير موجود!");
-}
-
-// إنشاء البوت بدون polling
-const bot = new TelegramBot(process.env.BOT_TOKEN);
+// إنشاء البوت (Webhook فقط)
+const bot = new TelegramBot(process.env.BOT_TOKEN, {
+  polling: false
+});
 
 // دالة الاتصال بـ Gemini
 async function askGemini(prompt) {
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1000,
-          }
-        }),
-      }
-    );
+    console.log("Sending prompt to Gemini:", prompt.substring(0, 50) + "...");
+    
+    // استخدم نموذج gemini-pro أو gemini-1.5-flash (أكثر استقرارًا)
+    const MODEL_NAME = "gemini-pro";
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1000,
+        }
+      }),
+    });
 
+    console.log("Gemini response status:", response.status);
+    
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`API Error: ${response.status} - ${JSON.stringify(error)}`);
+      const errorData = await response.json();
+      console.error("Gemini API Error:", errorData);
+      return `⚠️ خطأ في API: ${response.status} - ${JSON.stringify(errorData.error || errorData)}`;
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ لا توجد إجابة";
+    console.log("Gemini response data:", JSON.stringify(data).substring(0, 200));
     
-  } catch (error) {
-    console.error("Gemini Error:", error.message);
-    return `❌ خطأ: ${error.message}`;
+    // محاولات مختلفة لاستخراج النص
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ||
+                 data.candidates?.[0]?.content?.text ||
+                 data.text ||
+                 "لم أستطع استخراج النص من الرد 🤖";
+    
+    return text.trim() || "⚠️ الرد جاء فارغًا من Gemini";
+    
+  } catch (err) {
+    console.error("Gemini Fetch Error:", err);
+    return `❌ تعذر الاتصال بـ Gemini: ${err.message}`;
   }
 }
 
-// معالجة الرسائل
-bot.on("message", async (msg) => {
-  console.log("📨 Received message:", msg.text);
-  
-  // تجاهل الرسائل غير النصية والأوامر
-  if (!msg.text || msg.text.startsWith("/")) return;
-  
+// أمر /start
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
+  await bot.sendMessage(
+    chatId,
+    "أهلاً 👋\nاكتب سؤالك وسأجيبك باستخدام Gemini 🤖\n\nلتجربة الاتصال: /test"
+  );
+});
+
+// أمر /test لاختبار الاتصال بـ Gemini
+bot.onText(/\/test/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, "🔍 جاري اختبار الاتصال بـ Gemini...");
   
+  const testPrompt = "أجب بكلمة 'نجاح' فقط";
+  const reply = await askGemini(testPrompt);
+  
+  await bot.sendMessage(chatId, `نتيجة الاختبار: ${reply}`);
+});
+
+// أي رسالة أخرى
+bot.on("message", async (msg) => {
+  if (!msg.text || msg.text.startsWith("/")) return;
+
+  const chatId = msg.chat.id;
+  let typingMessageId = null;
+
   try {
-    // إرسال رسالة الانتظار
-    const waitMsg = await bot.sendMessage(chatId, "⏳ جاري التفكير...");
-    
-    // الحصول على رد من Gemini
-    const geminiReply = await askGemini(msg.text);
-    
-    // حذف رسالة الانتظار
-    await bot.deleteMessage(chatId, waitMsg.message_id);
-    
-    // إرسال الرد
-    await bot.sendMessage(chatId, geminiReply);
-    
-  } catch (error) {
-    console.error("Processing error:", error);
-    await bot.sendMessage(chatId, `❌ حدث خطأ: ${error.message}`);
+    // إرسال رسالة "أفكر..." وإظهار المؤشر
+    const typingMsg = await bot.sendMessage(chatId, "⏳ أفكّر...");
+    typingMessageId = typingMsg.message_id;
+
+    // الاتصال بـ Gemini
+    console.log(`Processing message from ${chatId}: ${msg.text}`);
+    const reply = await askGemini(msg.text);
+    console.log(`Reply for ${chatId}: ${reply.substring(0, 50)}...`);
+
+    // حذف مؤشر الكتابة
+    if (typingMessageId) {
+      try {
+        await bot.deleteMessage(chatId, typingMessageId);
+      } catch (e) {
+        console.log("Could not delete typing message:", e.message);
+      }
+    }
+
+    // إرسال الرد النهائي (اقسّم إذا كان طويلاً)
+    if (reply.length > 4096) {
+      for (let i = 0; i < reply.length; i += 4096) {
+        await bot.sendMessage(chatId, reply.substring(i, i + 4096));
+      }
+    } else {
+      await bot.sendMessage(chatId, reply);
+    }
+
+  } catch (err) {
+    console.error("Bot Error:", err);
+
+    // إزالة مؤشر الكتابة عند حدوث خطأ
+    if (typingMessageId) {
+      try {
+        await bot.deleteMessage(chatId, typingMessageId);
+      } catch (e) {}
+    }
+
+    await bot.sendMessage(
+      chatId, 
+      `⚠️ حدث خطأ: ${err.message}\n\nيرجى المحاولة مرة أخرى أو استخدام /test لفحص الاتصال.`
+    );
   }
 });
 
-// معالج Webhook لـ Vercel
+// Webhook Handler (Vercel)
 export default async function handler(req, res) {
-  console.log("🌐 Webhook called with method:", req.method);
-  
-  if (req.method === 'POST') {
+  if (req.method === "POST") {
     try {
-      const update = req.body;
-      console.log("📦 Update received:", update.message?.text || "no text");
-      
-      // معالجة التحديث
-      await bot.processUpdate(update);
-      
-      res.status(200).json({ ok: true });
-    } catch (error) {
-      console.error("❌ Webhook error:", error);
-      res.status(500).json({ error: error.message });
+      console.log("Webhook received:", JSON.stringify(req.body).substring(0, 200));
+      await bot.processUpdate(req.body);
+      return res.status(200).send("ok");
+    } catch (err) {
+      console.error("Webhook Error:", err);
+      return res.status(500).send("error");
     }
-  } else {
-    // صفحة الاختبار عند زيارة الرابط مباشرة
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Telegram Bot Status</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          .success { color: green; }
-          .error { color: red; }
-        </style>
-      </head>
-      <body>
-        <h1>🤖 Telegram + Gemini Bot</h1>
-        <p>Status: <span class="success">✅ Running</span></p>
-        <p>BOT_TOKEN: ${process.env.BOT_TOKEN ? "✅ Set" : "❌ Missing"}</p>
-        <p>GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? "✅ Set" : "❌ Missing"}</p>
-        <hr>
-        <h3>🔧 Setup Instructions:</h3>
-        <ol>
-          <li>Set Webhook: <code>https://api.telegram.org/bot[YOUR_BOT_TOKEN]/setWebhook?url=[YOUR_VERCEL_URL]/api/bot</code></li>
-          <li>Test Webhook: <code>https://api.telegram.org/bot[YOUR_BOT_TOKEN]/getWebhookInfo</code></li>
-        </ol>
-        <a href="https://api.telegram.org/bot${process.env.BOT_TOKEN}/getWebhookInfo" target="_blank">📊 Check Webhook Status</a>
-      </body>
-      </html>
-    `);
   }
-        }
+
+  // عند فتح الرابط في المتصفح
+  res.status(200).send(`
+    Telegram + Gemini is running ✅
+    <br><br>
+    <a href="https://console.cloud.google.com/apis/credentials" target="_blank">🔗 تحقق من Google Cloud Console</a>
+    <br>
+    <a href="https://makersuite.google.com/app/apikey" target="_blank">🔗 تحقق من API Keys</a>
+  `);
+}
