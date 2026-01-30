@@ -1,35 +1,48 @@
 import TelegramBot from "node-telegram-bot-api";
 
+// إنشاء البوت (Webhook – بدون polling)
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// دالة إرسال السؤال إلى Gemini
+/**
+ * إرسال السؤال إلى Gemini
+ */
 async function askGemini(text) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         contents: [
           {
-            parts: [{ text }]
-          }
-        ]
-      })
+            role: "user",
+            parts: [{ text }],
+          },
+        ],
+      }),
     }
   );
 
-  const data = await res.json();
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error("Gemini API Error:", data);
+    throw new Error("Gemini API failed");
+  }
+
   return (
     data.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "لم أفهم سؤالك 🤔"
+    "لم أستطع توليد رد 🤖"
   );
 }
 
-// /start
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
+// أمر /start
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(
+    chatId,
     "أهلاً 👋\nاكتب أي سؤال وسأجيبك باستخدام Gemini 🤖"
   );
 });
@@ -41,20 +54,29 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
 
   try {
+    // رسالة مؤقتة (اختياري)
+    await bot.sendMessage(chatId, "⏳ أفكّر...");
+
     const reply = await askGemini(msg.text);
     await bot.sendMessage(chatId, reply);
-  } catch (e) {
-    console.error(e);
-    await bot.sendMessage(chatId, "حدث خطأ 😢");
+  } catch (error) {
+    console.error("Bot Error:", error);
+    await bot.sendMessage(chatId, "حدث خطأ 😢 حاول لاحقًا");
   }
 });
 
-// Webhook Handler (Vercel)
+// Vercel Webhook Handler
 export default async function handler(req, res) {
   if (req.method === "POST") {
-    await bot.processUpdate(req.body);
-    return res.status(200).send("ok");
+    try {
+      await bot.processUpdate(req.body);
+      return res.status(200).send("ok");
+    } catch (err) {
+      console.error("Webhook Error:", err);
+      return res.status(500).send("error");
+    }
   }
 
-  res.status(200).send("Bot + Gemini is running ✅");
+  // عند فتح الرابط في المتصفح
+  res.status(200).send("Telegram Bot + Gemini is running ✅");
 }
